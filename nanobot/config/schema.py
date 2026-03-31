@@ -1,5 +1,5 @@
 """Configuration schema using Pydantic."""
-
+"""1. 规定“表格”长什么样"""
 from pathlib import Path
 from typing import Literal
 
@@ -158,7 +158,7 @@ class ToolsConfig(Base):
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
 
-class Config(BaseSettings):
+class Config(BaseSettings): # 继承自 pydantic.BaseSettings
     """Root configuration for nanobot."""
 
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
@@ -174,12 +174,13 @@ class Config(BaseSettings):
         return Path(self.agents.defaults.workspace).expanduser()
 
     def _match_provider(
-        self, model: str | None = None
+        self, 
+        model: str | None = None
     ) -> tuple["ProviderConfig | None", str | None]:
         """Match provider config and its registry name. Returns (config, spec_name)."""
         from nanobot.providers.registry import PROVIDERS, find_by_name
 
-        forced = self.agents.defaults.provider
+        forced = self.agents.defaults.provider # 用户如果在配置里指定了provider
         if forced != "auto":
             spec = find_by_name(forced)
             if spec:

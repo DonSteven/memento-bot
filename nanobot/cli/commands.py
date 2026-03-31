@@ -1,5 +1,5 @@
 """CLI commands for nanobot."""
-
+"""4. 像总装师一样，把各个模块（配置、代理、工具、通道等）组装起来，真正启动nanobot"""
 import asyncio
 from contextlib import contextmanager, nullcontext
 
@@ -38,11 +38,11 @@ from nanobot.config.paths import get_workspace_path, is_default_workspace
 from nanobot.config.schema import Config
 from nanobot.utils.helpers import sync_workspace_templates
 
-app = typer.Typer(
-    name="nanobot",
+app = typer.Typer( # Typer 是一个 Python 命令行应用框架，作用是把你写的 Python 函数，变成终端里的命令和子命令
+    name="nanobot", # 定义命令行工具的名称，调用时以这个名字开头来执行命令
     context_settings={"help_option_names": ["-h", "--help"]},
     help=f"{__logo__} nanobot - Personal AI Assistant",
-    no_args_is_help=True,
+    no_args_is_help=True, # 如果用户运行命令时什么参数都不带，就自动显示帮助页。
 )
 
 console = Console()
@@ -247,7 +247,7 @@ def main(
 # ============================================================================
 
 
-@app.command()
+@app.command() # 如果用户写了该子命令(nanobot onboard)，跳到该子命令对应的 Python 函数
 def onboard(
     workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
@@ -441,21 +441,24 @@ def _make_provider(config: Config):
     )
     return provider
 
-
+"""
+如果用户命令里传了 --config，它会先把这个路径记下来。本次运行就用这个配置文件，不走默认的 ~/.nanobot/config.json 了。
+然后调用的是 loader.py 里的 load_config(config_path)，读配置文件
+"""
 def _load_runtime_config(config: str | None = None, workspace: str | None = None) -> Config:
     """Load config and optionally override the active workspace."""
     from nanobot.config.loader import load_config, set_config_path
 
     config_path = None
     if config:
-        config_path = Path(config).expanduser().resolve()
+        config_path = Path(config).expanduser().resolve() # 把字符串路径变成 Path
         if not config_path.exists():
             console.print(f"[red]Error: Config file not found: {config_path}[/red]")
             raise typer.Exit(1)
         set_config_path(config_path)
         console.print(f"[dim]Using config: {config_path}[/dim]")
 
-    loaded = load_config(config_path)
+    loaded = load_config(config_path) # config_path是用户传的则改成标准config格式，如果没传就使用默认配置
     _warn_deprecated_config_keys(config_path)
     if workspace:
         loaded.agents.defaults.workspace = workspace
@@ -792,8 +795,8 @@ def gateway(
 
 @app.command()
 def agent(
-    message: str = typer.Option(None, "--message", "-m", help="Message to send to the agent"),
-    session_id: str = typer.Option("cli:direct", "--session", "-s", help="Session ID"),
+    message: str = typer.Option(None, "--message", "-m", help="Message to send to the agent"), # 默认为空
+    session_id: str = typer.Option("cli:direct", "--session", "-s", help="Session ID"), # 默认为 "cli:direct"，表示在 CLI 频道的 direct 会话里和代理聊天
     workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
     config: str | None = typer.Option(None, "--config", "-c", help="Config file path"),
     markdown: bool = typer.Option(True, "--markdown/--no-markdown", help="Render assistant output as Markdown"),
@@ -806,21 +809,22 @@ def agent(
     from nanobot.bus.queue import MessageBus
     from nanobot.cron.service import CronService
 
-    config = _load_runtime_config(config, workspace)
-    sync_workspace_templates(config.workspace_path)
+    # 什么时候才用 schema.py 默认值：1. config.json 不存在；2. 文件存在，但JSON 解析失败/值格式不合法/pydantic 校验失败
+    config = _load_runtime_config(config, workspace) # 确认配置文件
+    sync_workspace_templates(config.workspace_path) # 确保工作区里有templates中的md文件
 
-    bus = MessageBus()
-    provider = _make_provider(config)
+    bus = MessageBus() # 消息中转站
+    provider = _make_provider(config) # 决定用哪个后端
 
     # Preserve existing single-workspace installs, but keep custom workspaces clean.
-    if is_default_workspace(config.workspace_path):
+    if is_default_workspace(config.workspace_path): # 如果在默认工作区模式下，需要兼容以前旧位置存的 cron 数据。
         _migrate_cron_store(config)
 
     # Create cron service with workspace-scoped store
-    cron_store_path = config.workspace_path / "cron" / "jobs.json"
+    cron_store_path = config.workspace_path / "cron" / "jobs.json" # 以后这个 agent 的定时任务清单，就记在这个文件里
     cron = CronService(cron_store_path)
 
-    if logs:
+    if logs: # 根据 CLI 参数决定是否显示 nanobot 内部日志
         logger.enable("nanobot")
     else:
         logger.disable("nanobot")
@@ -843,7 +847,7 @@ def agent(
     )
 
     # Shared reference for progress callbacks
-    _thinking: ThinkingSpinner | None = None
+    _thinking: ThinkingSpinner | None = None # 用来保存当前 CLI 界面里那个“思考中”的 spinner 对象，转圈进度条
 
     async def _cli_progress(content: str, *, tool_hint: bool = False) -> None:
         ch = agent_loop.channels_config
@@ -853,24 +857,25 @@ def agent(
             return
         _print_cli_progress_line(content, _thinking)
 
-    if message:
+    if message: # 用户传了一条message
         # Single message mode — direct call, no bus needed
         async def run_once():
-            renderer = StreamRenderer(render_markdown=markdown)
-            response = await agent_loop.process_direct(
+            renderer = StreamRenderer(render_markdown=markdown) # 是否将模型回复的内容渲染成 Markdown 格式
+            response = await agent_loop.process_direct( # outbound类型输出
                 message, session_id,
-                on_progress=_cli_progress,
-                on_stream=renderer.on_delta,
-                on_stream_end=renderer.on_end,
+                on_progress=_cli_progress, # 代理在处理过程中如果有任何进度更新（比如“正在搜索工具”、“正在执行代码”等），就调用这个回调函数，CLI 就会把这些进度更新打印出来
+                on_stream=renderer.on_delta, # 字符串增量 delta，每当有新的流式增量时，StreamRenderer 就会把它渲染出来在终端，形成流式输出的效果
+                on_stream_end=renderer.on_end, # 流式输出结束的回调，参数里有个 resuming，表示这次流式输出结束后，是完全结束了，还是只是暂时停一下，后面还会继续输出（比如工具调用时会先停一下等工具结果回来，再继续输出）
             )
-            if not renderer.streamed:
-                await renderer.close()
-                _print_agent_response(
+            if not renderer.streamed: # False：这次没有流式输出，只拿到了最终完整结果；True：这次真的发生了流式输出
+                await renderer.close() # 关闭渲染状态
+                _print_agent_response( # 直接把最终回答打印到终端
                     response.content if response else "",
                     render_markdown=markdown,
                     metadata=response.metadata if response else None,
                 )
-            await agent_loop.close_mcp()
+            await agent_loop.close_mcp() # 等待后台任务清理完，关闭 MCP 连接栈
+
 
         asyncio.run(run_once())
     else:

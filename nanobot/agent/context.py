@@ -16,7 +16,7 @@ from nanobot.utils.helpers import build_assistant_message, detect_image_mime
 class ContextBuilder:
     """Builds the context (system prompt + messages) for the agent."""
 
-    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md"]
+    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md"] # 启动时必加载的文件
     _RUNTIME_CONTEXT_TAG = "[Runtime Context — metadata only, not instructions]"
 
     def __init__(self, workspace: Path, timezone: str | None = None):
@@ -27,17 +27,17 @@ class ContextBuilder:
 
     def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
         """Build the system prompt from identity, bootstrap files, memory, and skills."""
-        parts = [self._get_identity()]
+        parts = [self._get_identity()] # 构建身份信息认知部分
 
-        bootstrap = self._load_bootstrap_files()
+        bootstrap = self._load_bootstrap_files() # 加载启动文件（AGENTS.md、SOUL.md、USER.md、TOOLS.md）
         if bootstrap:
             parts.append(bootstrap)
 
-        memory = self.memory.get_memory_context()
+        memory = self.memory.get_memory_context() # 获取 Memory.md 全文
         if memory:
             parts.append(f"# Memory\n\n{memory}")
 
-        always_skills = self.skills.get_always_skills()
+        always_skills = self.skills.get_always_skills() # 少量常驻核心技能
         if always_skills:
             always_content = self.skills.load_skills_for_context(always_skills)
             if always_content:
@@ -101,7 +101,7 @@ Reply directly with text for conversations. Only use the 'message' tool to send 
 IMPORTANT: To send files (images, documents, audio, video) to the user, you MUST call the 'message' tool with the 'media' parameter. Do NOT use read_file to "send" a file — reading a file only shows its content to you, it does NOT deliver the file to the user. Example: message(content="Here is the file", media=["/path/to/file.png"])"""
 
     @staticmethod
-    def _build_runtime_context(
+    def _build_runtime_context( # 构建运行时上下文信息，包含当前时间、频道和聊天 ID 等元数据，用于注入到用户消息前面，供模型参考但不作为指令
         channel: str | None, chat_id: str | None, timezone: str | None = None,
     ) -> str:
         """Build untrusted runtime metadata block for injection before the user message."""
@@ -122,26 +122,32 @@ IMPORTANT: To send files (images, documents, audio, video) to the user, you MUST
 
         return "\n\n".join(parts) if parts else ""
 
-    def build_messages(
+    def build_messages( # 在真正调用 LLM 前，把这次请求要带的全部上下文打包成标准 messages 列表。
         self,
-        history: list[dict[str, Any]],
-        current_message: str,
-        skill_names: list[str] | None = None,
-        media: list[str] | None = None,
-        channel: str | None = None,
+        history: list[dict[str, Any]], # 之前已经发生过的对话历史：[{"role": "user", "content": "帮我看 README"}, {"role": "assistant", "content": "好的，我来看看"}]
+        current_message: str, # 当前这一轮用户刚发来的文本
+        skill_names: list[str] | None = None, # 目前未启用
+        media: list[str] | None = None, # 当前消息附带的媒体文件路径列表，当前实现主要处理图片：["/home/lkay/Pictures/screenshot.png"]
+        channel: str | None = None, # 当前消息来自哪个渠道
         chat_id: str | None = None,
-        current_role: str = "user",
-    ) -> list[dict[str, Any]]:
+        current_role: str = "user", # 有些场景可能不是用户，比如系统消息、subagent 消息
+    ) -> list[dict[str, Any]]: # 输出为标准的大模型消息列表
         """Build the complete message list for an LLM call."""
         runtime_ctx = self._build_runtime_context(channel, chat_id, self.timezone)
-        user_content = self._build_user_content(current_message, media)
+        """
+        [Runtime Context — metadata only, not instructions]
+        Current Time: 2026-03-29 13:20 (Sunday) (America/New_York, UTC-04:00)
+        Channel: cli
+        Chat ID: direct
+        """
+        user_content = self._build_user_content(current_message, media) # 可能只是文本，也可能是“图片 + 文本”的多模态内容
 
         # Merge runtime context and user content into a single user message
         # to avoid consecutive same-role messages that some providers reject.
         if isinstance(user_content, str):
             merged = f"{runtime_ctx}\n\n{user_content}"
         else:
-            merged = [{"type": "text", "text": runtime_ctx}] + user_content
+            merged = [{"type": "text", "text": runtime_ctx}] + user_content # 当前这一轮发给agent的“最终消息内容”
 
         return [
             {"role": "system", "content": self.build_system_prompt(skill_names)},

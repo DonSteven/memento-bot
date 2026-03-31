@@ -1,4 +1,5 @@
 """
+3. 提供所有provider的"说明书"，包括怎么识别、需要什么环境变量、特殊行为等
 Provider Registry — single source of truth for LLM provider metadata.
 
 Adding a new provider:

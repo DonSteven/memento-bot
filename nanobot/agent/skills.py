@@ -190,11 +190,30 @@ class SkillsLoader:
         meta = self.get_skill_metadata(name) or {}
         return self._parse_nanobot_metadata(meta.get("metadata", ""))
 
-    def get_always_skills(self) -> list[str]:
+    def get_always_skills(self) -> list[str]: # ["memory", "weather"]
         """Get skills marked as always=true that meet requirements."""
         result = []
+        """ list_skills:
+            [
+                {
+                    "name": "memory",
+                    "path": "/home/lkay/.nanobot/workspace/skills/memory/SKILL.md",
+                    "source": "workspace"
+                },
+                {
+                    "name": "weather",
+                    "path": "/home/lkay/projects/nanobot/nanobot/skills/weather/SKILL.md",
+                    "source": "builtin"
+                }
+            ]
+        """
         for s in self.list_skills(filter_unavailable=True):
             meta = self.get_skill_metadata(s["name"]) or {}
+            # {
+            #     "description": "Long-term memory helpers",
+            #     "always": "true",
+            #     "metadata": "{\"nanobot\": {\"always\": true}}"
+            # }
             skill_meta = self._parse_nanobot_metadata(meta.get("metadata", ""))
             if skill_meta.get("always") or meta.get("always"):
                 result.append(s["name"])
@@ -209,6 +228,10 @@ class SkillsLoader:
 
         Returns:
             Metadata dict or None.
+        """
+        """
+        找到这个 skill 的 SKILL.md，读取文件内容
+        解析顶部 frontmatter，返回一个普通字典
         """
         content = self.load_skill(name)
         if not content:

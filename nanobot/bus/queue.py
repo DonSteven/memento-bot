@@ -11,15 +11,21 @@ class MessageBus:
 
     Channels push messages to the inbound queue, and the agent processes
     them and pushes responses to the outbound queue.
+    
+    channel 把消息放进来
+    agent 从里面取消息处理
+    agent 处理完再把回复放出去
+    channel 再把回复发送到外部平台
+    外部用户 → channel → inbound queue → agent → outbound queue → channel → 外部用户
     """
 
-    def __init__(self):
-        self.inbound: asyncio.Queue[InboundMessage] = asyncio.Queue()
-        self.outbound: asyncio.Queue[OutboundMessage] = asyncio.Queue()
+    def __init__(self): # 没有消息时，agent 不应该忙等，所以用异步队列。异步不等于多线程，可以在同一线程上        
+        self.inbound: asyncio.Queue[InboundMessage] = asyncio.Queue() # 消息来源，用户id，来源的id，消息内容，时间戳
+        self.outbound: asyncio.Queue[OutboundMessage] = asyncio.Queue() # 消息来源，来源的id，消息内容，回复对象
 
     async def publish_inbound(self, msg: InboundMessage) -> None:
         """Publish a message from a channel to the agent."""
-        await self.inbound.put(msg)
+        await self.inbound.put(msg) # 告诉程序“这里可能要等，先把控制权让出去”
 
     async def consume_inbound(self) -> InboundMessage:
         """Consume the next inbound message (blocks until available)."""
@@ -33,7 +39,7 @@ class MessageBus:
         """Consume the next outbound message (blocks until available)."""
         return await self.outbound.get()
 
-    @property
+    @property # 这个方法是属性，调用时不用写bus.inbound_size()，直接bus.inbound_size
     def inbound_size(self) -> int:
         """Number of pending inbound messages."""
         return self.inbound.qsize()

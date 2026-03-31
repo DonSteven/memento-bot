@@ -1,5 +1,5 @@
 """Configuration loading utilities."""
-
+"""2. 负责把配置文件读进来，填成“表格”对象"""
 import json
 from pathlib import Path
 
@@ -35,19 +35,19 @@ def load_config(config_path: Path | None = None) -> Config:
     Returns:
         Loaded configuration object.
     """
-    path = config_path or get_config_path()
+    path = config_path or get_config_path() # get_config_path() 会返回默认路径 ~/.nanobot/config.json
 
     if path.exists():
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
-            data = _migrate_config(data)
-            return Config.model_validate(data)
+            data = _migrate_config(data) # 迁移旧配置格式到新格式
+            return Config.model_validate(data) # 把字典数据变成 Config 对象，验证字段类型和必填项
         except (json.JSONDecodeError, ValueError, pydantic.ValidationError) as e:
             logger.warning(f"Failed to load config from {path}: {e}")
             logger.warning("Using default configuration.")
 
-    return Config()
+    return Config() ## 如果没有配置文件，或者配置文件有问题，就用默认配置
 
 
 def save_config(config: Config, config_path: Path | None = None) -> None:

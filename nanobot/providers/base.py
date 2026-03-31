@@ -20,6 +20,18 @@ class ToolCallRequest:
     provider_specific_fields: dict[str, Any] | None = None
     function_provider_specific_fields: dict[str, Any] | None = None
 
+    """
+    [
+        ToolCallRequest(
+            id="call_xxx",
+            name="save_memory",
+            arguments={
+                "history_entry": "...",
+                "memory_update": "..."
+            }
+        )
+    ]
+    """
     def to_openai_tool_call(self) -> dict[str, Any]:
         """Serialize to an OpenAI-style tool_call payload."""
         tool_call = {
