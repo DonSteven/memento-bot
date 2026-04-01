@@ -1,0 +1,50 @@
+{
+  "canonical_memories": [
+    {
+      "memory_id": "mem_user_env",
+      "main_class": "user_info",
+      "sub_class": "environment",
+      "text": "User works on Linux.",
+      "confidence": 0.9,
+      "priority": 0.7,
+      "status": "active",
+      "version": 1
+    },
+    {
+      "memory_id": "mem_pref_style",
+      "main_class": "preferences",
+      "sub_class": "reply_style",
+      "text": "User prefers concise answers.",
+      "confidence": 0.95,
+      "priority": 0.8,
+      "status": "active",
+      "version": 1
+    }
+  ],
+  "raw_events": [
+    {
+      "event_id": "evt_1",
+      "ts": "2026-04-01T09:00:00",
+      "session_key": "cli:test",
+      "history_text": "[2026-04-01 09:00] User said they work on Linux.",
+      "plain_text": "User said they work on Linux.",
+      "main_class": "user_info",
+      "sub_class": "environment",
+      "candidate_type": "fact",
+      "confidence": 0.8
+    },
+    {
+      "event_id": "evt_2",
+      "ts": "2026-04-01T09:05:00",
+      "session_key": "cli:test",
+      "history_text": "[2026-04-01 09:05] User prefers concise answers.",
+      "plain_text": "User prefers concise answers.",
+      "main_class": "preferences",
+      "sub_class": "reply_style",
+      "candidate_type": "fact",
+      "confidence": 0.9
+    }
+  ],
+  "expected_memory_markdown": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## User Information\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Project Context\n\n(Information about ongoing projects)\n\n## Important Notes\n\n(Things to remember)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*",
+  "expected_history_markdown": "[2026-04-01 09:00] User said they work on Linux.\n\n[2026-04-01 09:05] User prefers concise answers."
+}
