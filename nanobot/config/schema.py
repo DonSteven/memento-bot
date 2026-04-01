@@ -158,6 +158,12 @@ class ToolsConfig(Base):
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
 
+class MemoryConfig(Base):
+    """Persistent memory configuration."""
+
+    mode: Literal["legacy", "shadow", "v2"] = "legacy"
+
+
 class Config(BaseSettings): # 继承自 pydantic.BaseSettings
     """Root configuration for nanobot."""
 
@@ -167,6 +173,7 @@ class Config(BaseSettings): # 继承自 pydantic.BaseSettings
     api: ApiConfig = Field(default_factory=ApiConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
 
     @property
     def workspace_path(self) -> Path:

@@ -1,0 +1,33 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "I work on Linux and prefer concise answers.",
+      "timestamp": "2026-04-01T09:00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "Understood.",
+      "timestamp": "2026-04-01T09:00:01"
+    }
+  ],
+  "tool_arguments": {
+    "history_entry": "[2026-04-01 09:00] User works on Linux and prefers concise answers.",
+    "canonical_memories": [
+      {
+        "main_class": "user_info",
+        "sub_class": "environment",
+        "text": "User works on Linux.",
+        "confidence": 0.88
+      },
+      {
+        "main_class": "preferences",
+        "sub_class": "reply_style",
+        "text": "User prefers concise answers.",
+        "confidence": 0.93
+      }
+    ]
+  },
+  "expected_memory_markdown": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## User Information\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Project Context\n\n(Information about ongoing projects)\n\n## Important Notes\n\n(Things to remember)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*",
+  "expected_history_markdown": "[2026-04-01 09:00] User works on Linux and prefers concise answers."
+}

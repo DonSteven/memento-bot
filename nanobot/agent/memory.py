@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
+from nanobot.agent.memory_pipeline import ShadowMemoryPipeline
 from nanobot.utils.helpers import ensure_dir, estimate_message_tokens, estimate_prompt_tokens_chain
 
 if TYPE_CHECKING:
@@ -92,10 +93,12 @@ class MemoryStore:
     """连续失败多少次后放弃 LLM 归纳，直接原样存档消息到 HISTORY.md"""
     _MAX_FAILURES_BEFORE_RAW_ARCHIVE = 3
 
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, mode: str = "legacy"):
         self.memory_dir = ensure_dir(workspace / "memory")
         self.memory_file = self.memory_dir / "MEMORY.md"
         self.history_file = self.memory_dir / "HISTORY.md"
+        self.mode = mode
+        self.shadow_pipeline = ShadowMemoryPipeline(workspace) if mode == "shadow" else None
         self._consecutive_failures = 0
 
     def read_long_term(self) -> str: # 读取 Memory.md 内容
@@ -221,6 +224,14 @@ class MemoryStore:
             if update != current_memory:
                 self.write_long_term(update)
 
+            if self.shadow_pipeline is not None:
+                try:
+                    shadow_ok = await self.shadow_pipeline.ingest_chunk(messages, provider, model)
+                    if not shadow_ok:
+                        logger.warning("Shadow memory pipeline returned no structured write for this chunk")
+                except Exception:
+                    logger.exception("Shadow memory pipeline failed after legacy consolidation")
+
             self._consecutive_failures = 0
             logger.info("Memory consolidation done for {} messages", len(messages))
             return True
@@ -266,8 +277,10 @@ class MemoryConsolidator:
         build_messages: Callable[..., list[dict[str, Any]]],
         get_tool_definitions: Callable[[], list[dict[str, Any]]],
         max_completion_tokens: int = 4096,
+        mode: str = "legacy",
     ):
-        self.store = MemoryStore(workspace)
+        self.mode = mode
+        self.store = MemoryStore(workspace, mode=mode)
         self.provider = provider
         self.model = model
         self.sessions = sessions

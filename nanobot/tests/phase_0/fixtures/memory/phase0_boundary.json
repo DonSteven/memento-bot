@@ -1,0 +1,45 @@
+{
+  "name": "phase0_legacy_boundary",
+  "memory_mode": "legacy",
+  "session_key": "cli:fixture",
+  "tokens_to_remove": 400,
+  "messages": [
+    {
+      "role": "user",
+      "content": "u1",
+      "timestamp": "2026-01-01T00:00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "a1",
+      "timestamp": "2026-01-01T00:00:01"
+    },
+    {
+      "role": "user",
+      "content": "u2",
+      "timestamp": "2026-01-01T00:00:02"
+    },
+    {
+      "role": "assistant",
+      "content": "a2",
+      "timestamp": "2026-01-01T00:00:03"
+    },
+    {
+      "role": "user",
+      "content": "u3",
+      "timestamp": "2026-01-01T00:00:04"
+    }
+  ],
+  "token_map": {
+    "u1": 120,
+    "a1": 120,
+    "u2": 120,
+    "a2": 120,
+    "u3": 120
+  },
+  "expected": {
+    "boundary_index": 4,
+    "removed_tokens": 480,
+    "archived_contents": ["u1", "a1", "u2", "a2"]
+  }
+}

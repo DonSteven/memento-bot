@@ -174,6 +174,7 @@ class AgentLoop:
         channels_config: ChannelsConfig | None = None,
         timezone: str | None = None,
         hooks: list[AgentHook] | None = None,
+        memory_mode: str = "legacy",
     ):
         from nanobot.config.schema import ExecToolConfig, WebSearchConfig
 
@@ -189,6 +190,7 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
+        self.memory_mode = memory_mode
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
         self._extra_hooks: list[AgentHook] = hooks or []
@@ -230,6 +232,7 @@ class AgentLoop:
             build_messages=self.context.build_messages,
             get_tool_definitions=self.tools.get_definitions,
             max_completion_tokens=provider.generation.max_tokens,
+            mode=memory_mode,
         )
         self._register_default_tools()
         self.commands = CommandRouter()
