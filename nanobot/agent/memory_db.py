@@ -54,20 +54,24 @@ def render_memory_markdown(memories: list[dict[str, Any]]) -> str:
                 str(item.get("text") or ""),
             ),
         )
-        if not section_items:
-            lines.append(placeholder)
-            lines.append("")
-            continue
-
+        rendered_items: list[str] = []
         for item in section_items:
             sub_class = str(item.get("sub_class") or "").strip()
             text = str(item.get("text") or "").strip()
             if not text:
                 continue
             if sub_class and sub_class != "general":
-                lines.append(f"- {sub_class}: {text}")
+                rendered_items.append(f"- {sub_class}: {text}")
             else:
-                lines.append(f"- {text}")
+                rendered_items.append(f"- {text}")
+
+        if not rendered_items:
+            lines.append(placeholder)
+            lines.append("")
+            continue
+
+        for rendered_item in rendered_items:
+            lines.append(rendered_item)
         lines.append("")
 
     lines.extend([
