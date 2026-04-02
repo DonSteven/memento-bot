@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+from hashlib import sha1
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,7 @@ _SECTION_ORDER = (
     ("important_notes", "Important Notes", "(Things to remember)"),
 )
 _SECTION_INDEX = {key: (title, placeholder) for key, title, placeholder in _SECTION_ORDER}
+_TITLE_TO_MAIN_CLASS = {title: key for key, title, _ in _SECTION_ORDER}
 
 
 def _validate_main_class(main_class: str) -> None:
@@ -96,6 +99,54 @@ def render_history_markdown(events: list[dict[str, Any]]) -> str:
     return "\n\n".join(entries)
 
 
+def _canonical_memory_id(main_class: str, sub_class: str, text: str) -> str:
+    safe_slot = (sub_class or "general").strip().lower() or "general"
+    safe_slot = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in safe_slot)
+    digest = sha1(text.strip().encode("utf-8")).hexdigest()[:12]
+    return f"{main_class}:{safe_slot}:{digest}"
+
+
+
+
+def parse_memory_markdown(content: str) -> list[dict[str, Any]]:
+    """Parse a legacy MEMORY.md view into canonical memory items."""
+    memories: list[dict[str, Any]] = []
+    current_main_class: str | None = None
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("## "):
+            current_main_class = _TITLE_TO_MAIN_CLASS.get(line[3:].strip())
+            continue
+        if current_main_class is None:
+            continue
+        placeholder = _SECTION_INDEX[current_main_class][1]
+        if line == placeholder or line.startswith("---") or line.startswith("*This file is automatically"):
+            continue
+        if not line.startswith("- "):
+            continue
+
+        body = line[2:].strip()
+        if not body:
+            continue
+        sub_class = ""
+        text = body
+        if ": " in body:
+            maybe_sub_class, maybe_text = body.split(": ", 1)
+            if maybe_text.strip():
+                sub_class = maybe_sub_class.strip()
+                text = maybe_text.strip()
+        memory_id = _canonical_memory_id(current_main_class, sub_class, text)
+        memories.append({
+            "memory_id": memory_id,
+            "main_class": current_main_class,
+            "sub_class": sub_class,
+            "text": text,
+        })
+    return memories
+
+
 class MemoryDatabase:
     """Minimal SQLite storage base for raw events, canonical memories, and evidence links."""
 
@@ -116,6 +167,7 @@ class MemoryDatabase:
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
     def initialize(self) -> None:
@@ -164,6 +216,7 @@ class MemoryDatabase:
                     foreign key (memory_id) references canonical_memories(memory_id) on delete cascade,
                     foreign key (event_id) references raw_events(event_id) on delete cascade
                 );
+
                 """
             )
             conn.execute(
@@ -173,6 +226,7 @@ class MemoryDatabase:
                 """,
                 (str(SCHEMA_VERSION),),
             )
+
 
     def get_schema_version(self) -> int:
         self.initialize()
@@ -338,3 +392,53 @@ class MemoryDatabase:
         self.initialize()
         self.memory_file.write_text(self.render_memory_view(), encoding="utf-8")
         self.history_file.write_text(self.render_history_view(), encoding="utf-8")
+
+    def replace_canonical_snapshot(
+        self,
+        memories: list[dict[str, Any]],
+        *,
+        event_id: str | None = None,
+    ) -> None:
+        """Replace the canonical snapshot with a new set of canonical memories."""
+        self.initialize()
+        with self.connect() as conn:
+            conn.execute("delete from canonical_memories")
+            for memory in memories:
+                main_class = str(memory["main_class"])
+                _validate_main_class(main_class)
+                sub_class = str(memory.get("sub_class") or "")
+                text = str(memory.get("text") or "")
+                conn.execute(
+                    """
+                    insert into canonical_memories(
+                        memory_id, main_class, sub_class, text, confidence,
+                        priority, status, valid_from, valid_to, value_json, version
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(memory.get("memory_id") or _canonical_memory_id(main_class, sub_class, text)),
+                        main_class,
+                        sub_class,
+                        text,
+                        float(memory.get("confidence", 0.0) or 0.0),
+                        float(memory.get("priority", 0.0) or 0.0),
+                        str(memory.get("status") or "active"),
+                        memory.get("valid_from"),
+                        memory.get("valid_to"),
+                        json.dumps(memory.get("value"), ensure_ascii=False) if memory.get("value") is not None else None,
+                        int(memory.get("version", 1) or 1),
+                    ),
+                )
+                if event_id is not None:
+                    conn.execute(
+                        """
+                        insert into memory_evidence(memory_id, event_id, weight)
+                        values (?, ?, ?)
+                        """,
+                        (
+                            str(memory.get("memory_id") or _canonical_memory_id(main_class, sub_class, text)),
+                            event_id,
+                            1.0,
+                        ),
+                    )
+

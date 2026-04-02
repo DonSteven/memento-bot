@@ -1,0 +1,29 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "I work on Linux, prefer concise answers, and the active project is nanobot.",
+      "timestamp": "2026-04-01T11:00:00"
+    },
+    {
+      "role": "assistant",
+      "content": "Noted.",
+      "timestamp": "2026-04-01T11:00:01"
+    }
+  ],
+  "tool_arguments": {
+    "history_entry": "[2026-04-01 11:00] User works on Linux, prefers concise answers, and the active project is nanobot.",
+    "memory_update": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## User Information\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Project Context\n\n- active_project: The active project is nanobot.\n\n## Important Notes\n\n(Things to remember)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*"
+  },
+  "expected_memory_markdown": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## User Information\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Project Context\n\n- active_project: The active project is nanobot.\n\n## Important Notes\n\n(Things to remember)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*",
+  "expected_history_markdown": "[2026-04-01 11:00] User works on Linux, prefers concise answers, and the active project is nanobot.",
+  "expected": {
+    "main_classes": ["preferences", "project_context", "user_info"],
+    "sub_classes": ["reply_style", "active_project", "environment"],
+    "texts": [
+      "User prefers concise answers.",
+      "The active project is nanobot.",
+      "User works on Linux."
+    ]
+  }
+}

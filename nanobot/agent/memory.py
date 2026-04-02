@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import weakref
 from datetime import datetime
@@ -11,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
+from nanobot.agent.memory_db import MemoryDatabase, parse_memory_markdown
 from nanobot.agent.memory_pipeline import ShadowMemoryPipeline
 from nanobot.utils.helpers import ensure_dir, estimate_message_tokens, estimate_prompt_tokens_chain
 
@@ -98,6 +100,7 @@ class MemoryStore:
         self.memory_file = self.memory_dir / "MEMORY.md"
         self.history_file = self.memory_dir / "HISTORY.md"
         self.mode = mode
+        self.v2_db = MemoryDatabase(workspace) if mode == "v2" else None
         self.shadow_pipeline = ShadowMemoryPipeline(workspace) if mode == "shadow" else None
         self._consecutive_failures = 0
 
@@ -116,6 +119,32 @@ class MemoryStore:
     def get_memory_context(self) -> str:
         long_term = self.read_long_term()
         return f"## Long-term Memory\n{long_term}" if long_term else ""
+
+
+    def _persist_v2(self, *, entry: str, update: str, messages: list[dict]) -> None:
+        """把一次 LLM 产出的整份 MEMORY.md 更新结果，作为一个新的 v2 快照，完整写入数据库，并重建可读视图"""
+        if self.v2_db is None:
+            raise RuntimeError("v2 database is not initialized")
+
+        timestamp = datetime.now().isoformat(timespec="seconds")
+        event_id = f"v2_evt_{hashlib.sha1(f'{entry}|{timestamp}'.encode('utf-8')).hexdigest()[:12]}"
+        canonical_memories = parse_memory_markdown(update)
+        extracted = {
+            "memory_update": update,
+            "message_count": len(messages),
+        }
+
+        self.v2_db.insert_raw_event(
+            event_id=event_id,
+            ts=timestamp,
+            session_key="v2",
+            history_text=entry,
+            plain_text=self._format_messages(messages),
+            extracted=extracted,
+            candidate_type="v2_snapshot",
+        )
+        self.v2_db.replace_canonical_snapshot(canonical_memories, event_id=event_id)
+        self.v2_db.write_views()
 
     # 把一组消息 messages 格式化成一段纯文本，供后面的 memory consolidation prompt 使用。
     @staticmethod
@@ -219,10 +248,19 @@ class MemoryStore:
                 logger.warning("Memory consolidation: history_entry is empty after normalization")
                 return self._fail_or_raw_archive(messages)
 
-            self.append_history(entry)
             update = _ensure_text(update)
-            if update != current_memory:
-                self.write_long_term(update)
+            if self.mode == "v2":
+                try:
+                    self._persist_v2(entry=entry, update=update, messages=messages)
+                except Exception:
+                    logger.exception("V2 memory persistence failed, falling back to legacy file writes")
+                    self.append_history(entry)
+                    if update != current_memory:
+                        self.write_long_term(update)
+            else:
+                self.append_history(entry)
+                if update != current_memory:
+                    self.write_long_term(update)
 
             if self.shadow_pipeline is not None:
                 try:
