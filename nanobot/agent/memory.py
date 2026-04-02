@@ -120,6 +120,24 @@ class MemoryStore:
         long_term = self.read_long_term()
         return f"## Long-term Memory\n{long_term}" if long_term else ""
 
+    def get_retrieval_context(self, query: str, retrieval_mode: str = "full_view", limit: int = 5) -> str:
+        if retrieval_mode != "fts":
+            return self.get_memory_context()
+        if self.v2_db is None or not self.v2_db.db_path.exists():
+            return self.get_memory_context()
+
+        results = self.v2_db.query_canonical_memories(query, limit=limit)
+        if not results:
+            return ""
+
+        lines = ["## Retrieved Memory"]
+        for item in results:
+            main_class = str(item.get("main_class") or "")
+            sub_class = str(item.get("sub_class") or "").strip()
+            text = str(item.get("text") or "").strip()
+            label = f"{main_class}/{sub_class}" if sub_class else main_class
+            lines.append(f"- [{label}] {text}")
+        return "\n".join(lines)
 
     def _persist_v2(self, *, entry: str, update: str, messages: list[dict]) -> None:
         """把一次 LLM 产出的整份 MEMORY.md 更新结果，作为一个新的 v2 快照，完整写入数据库，并重建可读视图"""

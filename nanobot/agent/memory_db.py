@@ -106,6 +106,31 @@ def _canonical_memory_id(main_class: str, sub_class: str, text: str) -> str:
     return f"{main_class}:{safe_slot}:{digest}"
 
 
+def _build_fts_query(query: str) -> str:
+    """Build a tolerant FTS query from user text."""
+    raw_terms = [term.lower() for term in re.findall(r"[A-Za-z0-9_]+", query)]
+    terms: list[str] = []
+    seen: set[str] = set()
+
+    for raw in raw_terms:
+        if len(raw) < 3:
+            continue
+
+        candidates = [raw]
+        for suffix in ("ly", "ing", "ed", "es", "s"):
+            if raw.endswith(suffix) and len(raw) - len(suffix) >= 4:
+                candidates.append(raw[: -len(suffix)])
+
+        for candidate in candidates:
+            token = candidate.strip("_")
+            if len(token) < 3:
+                continue
+            normalized = f"{token}*"
+            if normalized not in seen:
+                seen.add(normalized)
+                terms.append(normalized)
+
+    return " OR ".join(terms)
 
 
 def parse_memory_markdown(content: str) -> list[dict[str, Any]]:
@@ -217,6 +242,12 @@ class MemoryDatabase:
                     foreign key (event_id) references raw_events(event_id) on delete cascade
                 );
 
+                create virtual table if not exists canonical_fts using fts5(
+                    memory_id UNINDEXED,
+                    main_class UNINDEXED,
+                    sub_class,
+                    text
+                );
                 """
             )
             conn.execute(
@@ -226,7 +257,18 @@ class MemoryDatabase:
                 """,
                 (str(SCHEMA_VERSION),),
             )
+            self._rebuild_fts(conn)
 
+    @staticmethod
+    def _rebuild_fts(conn: sqlite3.Connection) -> None:
+        conn.execute("delete from canonical_fts")
+        conn.execute(
+            """
+            insert into canonical_fts(memory_id, main_class, sub_class, text)
+            select memory_id, main_class, sub_class, text
+            from canonical_memories
+            """
+        )
 
     def get_schema_version(self) -> int:
         self.initialize()
@@ -330,6 +372,7 @@ class MemoryDatabase:
                     version,
                 ),
             )
+            self._rebuild_fts(conn)
 
     def add_evidence_link(self, *, memory_id: str, event_id: str, weight: float = 1.0) -> None:
         self.initialize()
@@ -441,4 +484,28 @@ class MemoryDatabase:
                             1.0,
                         ),
                     )
+            self._rebuild_fts(conn)
 
+    def query_canonical_memories(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Retrieve canonical memories with SQLite FTS5."""
+        self.initialize()
+        query = query.strip()
+        if not query:
+            return []
+        fts_query = _build_fts_query(query)
+        if not fts_query:
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                select c.memory_id, c.main_class, c.sub_class, c.text, c.confidence,
+                       c.priority, c.status, c.valid_from, c.valid_to, c.value_json, c.version
+                from canonical_fts f
+                join canonical_memories c on c.memory_id = f.memory_id
+                where canonical_fts match ?
+                order by bm25(canonical_fts), c.main_class asc, c.sub_class asc, c.memory_id asc
+                limit ?
+                """,
+                (fts_query, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]

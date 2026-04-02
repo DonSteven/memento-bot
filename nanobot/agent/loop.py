@@ -175,6 +175,7 @@ class AgentLoop:
         timezone: str | None = None,
         hooks: list[AgentHook] | None = None,
         memory_mode: str = "legacy",
+        memory_retrieval_mode: str = "full_view",
     ):
         from nanobot.config.schema import ExecToolConfig, WebSearchConfig
 
@@ -191,11 +192,17 @@ class AgentLoop:
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
         self.memory_mode = memory_mode
+        self.memory_retrieval_mode = memory_retrieval_mode
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
         self._extra_hooks: list[AgentHook] = hooks or []
 
-        self.context = ContextBuilder(workspace, timezone=timezone)
+        self.context = ContextBuilder(
+            workspace,
+            timezone=timezone,
+            memory_mode=memory_mode,
+            retrieval_mode=memory_retrieval_mode,
+        )
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.runner = AgentRunner(provider)

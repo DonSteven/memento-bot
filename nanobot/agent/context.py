@@ -19,13 +19,24 @@ class ContextBuilder:
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md"] # 启动时必加载的文件
     _RUNTIME_CONTEXT_TAG = "[Runtime Context — metadata only, not instructions]"
 
-    def __init__(self, workspace: Path, timezone: str | None = None):
+    def __init__(
+        self,
+        workspace: Path,
+        timezone: str | None = None,
+        memory_mode: str = "legacy",
+        retrieval_mode: str = "full_view",
+    ):
         self.workspace = workspace
         self.timezone = timezone
-        self.memory = MemoryStore(workspace)
+        self.memory = MemoryStore(workspace, mode=memory_mode)
+        self.retrieval_mode = retrieval_mode
         self.skills = SkillsLoader(workspace)
 
-    def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
+    def build_system_prompt(
+        self,
+        skill_names: list[str] | None = None,
+        current_message: str | None = None,
+    ) -> str:
         """Build the system prompt from identity, bootstrap files, memory, and skills."""
         parts = [self._get_identity()] # 构建身份信息认知部分
 
@@ -33,7 +44,13 @@ class ContextBuilder:
         if bootstrap:
             parts.append(bootstrap)
 
-        memory = self.memory.get_memory_context() # 获取 Memory.md 全文
+        if self.retrieval_mode == "fts" and current_message:
+            memory = self.memory.get_retrieval_context(
+                current_message,
+                retrieval_mode=self.retrieval_mode,
+            )
+        else:
+            memory = self.memory.get_memory_context() # 获取 Memory.md 全文
         if memory:
             parts.append(f"# Memory\n\n{memory}")
 
@@ -150,7 +167,7 @@ IMPORTANT: To send files (images, documents, audio, video) to the user, you MUST
             merged = [{"type": "text", "text": runtime_ctx}] + user_content # 当前这一轮发给agent的“最终消息内容”
 
         return [
-            {"role": "system", "content": self.build_system_prompt(skill_names)},
+            {"role": "system", "content": self.build_system_prompt(skill_names, current_message=current_message)},
             *history,
             {"role": current_role, "content": merged},
         ]

@@ -80,6 +80,7 @@ class Nanobot:
             mcp_servers=config.tools.mcp_servers,
             timezone=defaults.timezone,
             memory_mode=config.memory.mode,
+            memory_retrieval_mode=config.memory.retrieval_mode,
         )
         return cls(loop)
 

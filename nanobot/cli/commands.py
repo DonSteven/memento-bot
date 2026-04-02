@@ -551,6 +551,7 @@ def serve(
         channels_config=runtime_config.channels,
         timezone=runtime_config.agents.defaults.timezone,
         memory_mode=runtime_config.memory.mode,
+        memory_retrieval_mode=runtime_config.memory.retrieval_mode,
     )
 
     model_name = runtime_config.agents.defaults.model
@@ -640,6 +641,7 @@ def gateway(
         channels_config=config.channels,
         timezone=config.agents.defaults.timezone,
         memory_mode=config.memory.mode,
+        memory_retrieval_mode=config.memory.retrieval_mode,
     )
 
     # Set cron callback (needs agent)
@@ -847,6 +849,7 @@ def agent(
         channels_config=config.channels,
         timezone=config.agents.defaults.timezone,
         memory_mode=config.memory.mode,
+        memory_retrieval_mode=config.memory.retrieval_mode,
     )
 
     # Shared reference for progress callbacks
