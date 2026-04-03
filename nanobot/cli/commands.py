@@ -1234,6 +1234,51 @@ def status():
 
 
 # ============================================================================
+# Memory Evaluation
+# ============================================================================
+
+
+@app.command("memory-eval")
+def memory_eval(
+    output: str = typer.Option("markdown", "--output", "-o", help="Output format: markdown or json"),
+    save_dir: str | None = typer.Option(None, "--save-dir", help="Directory to save the Phase 6 report"),
+    fixtures_root: str | None = typer.Option(
+        None,
+        "--fixtures-root",
+        help="Repository root containing nanobot/tests phase fixtures",
+    ),
+):
+    """Run the Phase 6 offline memory replay and ablation report."""
+    import json
+
+    from nanobot.agent.memory_eval import (
+        render_phase6_report_markdown,
+        run_phase6_ablation,
+        save_phase6_report,
+    )
+
+    if output not in {"markdown", "json"}:
+        console.print("[red]Error:[/red] --output must be 'markdown' or 'json'")
+        raise typer.Exit(1)
+
+    report = run_phase6_ablation(Path(fixtures_root).expanduser() if fixtures_root else None)
+
+    if save_dir:
+        saved = save_phase6_report(report, Path(save_dir).expanduser())
+        console.print(f"[green]✓[/green] Saved JSON report to {saved['json']}")
+        console.print(f"[green]✓[/green] Saved Markdown report to {saved['markdown']}")
+        console.print()
+
+    if output == "json":
+        console.print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        console.print(Markdown(render_phase6_report_markdown(report)))
+
+    if report["summary"].get("failed", 0):
+        raise typer.Exit(1)
+
+
+# ============================================================================
 # OAuth Login
 # ============================================================================
 
