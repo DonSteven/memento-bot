@@ -40,7 +40,7 @@ def test_context_builder_fts_injects_only_retrieved_memory(tmp_path: Path) -> No
     )
     db.upsert_canonical_memory(
         memory_id="mem_project",
-        main_class="project_context",
+        main_class="projects",
         sub_class="active_project",
         text="The active project is nanobot.",
     )

@@ -1,5 +1,5 @@
 # Phase 2 test content:
-# - verifies shadow mode keeps legacy MEMORY/HISTORY writes intact while writing sidecar shadow artifacts
+# - verifies shadow mode keeps legacy MEMORY/HISTORY writes intact while writing sidecar shadow snapshots
 # - verifies shadow pipeline failures do not break the user-visible legacy consolidation result
 # - verifies legacy and shadow produce identical user-visible outputs for the same chunk
 # How to test:

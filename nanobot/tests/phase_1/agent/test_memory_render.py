@@ -59,9 +59,6 @@ def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
             sub_class=memory.get("sub_class", ""),
             text=memory["text"],
             confidence=memory.get("confidence", 0.0),
-            priority=memory.get("priority", 0.0),
-            status=memory.get("status", "active"),
-            version=memory.get("version", 1),
         )
 
     db.write_views()
@@ -73,10 +70,12 @@ def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
 def test_render_memory_markdown_all_sections_empty_uses_placeholders() -> None:
     rendered = render_memory_markdown([])
 
-    assert "## User Information\n\n(Important facts about the user)" in rendered
-    assert "## Preferences\n\n(User preferences learned over time)" in rendered
-    assert "## Project Context\n\n(Information about ongoing projects)" in rendered
-    assert "## Important Notes\n\n(Things to remember)" in rendered
+    assert "## Personal Profile\n\n(Stable background information about the user)" in rendered
+    assert "## Preferences\n\n(How the user prefers to communicate and collaborate)" in rendered
+    assert "## Constraints\n\n(Rules, boundaries, and requirements that must be respected)" in rendered
+    assert "## Projects\n\n(Information about ongoing learning and work projects)" in rendered
+    assert "## Daily Life\n\n(Daily routines, interests, and hobbies)" in rendered
+    assert "## Plans and Commitments\n\n(Future plans, commitments, deadlines, and to-dos)" in rendered
 
 
 def test_render_memory_markdown_ignores_empty_text_items() -> None:
@@ -89,7 +88,7 @@ def test_render_memory_markdown_ignores_empty_text_items() -> None:
         }
     ])
 
-    assert "## Preferences\n\n(User preferences learned over time)" in rendered
+    assert "## Preferences\n\n(How the user prefers to communicate and collaborate)" in rendered
     assert "- reply_style:" not in rendered
 
 

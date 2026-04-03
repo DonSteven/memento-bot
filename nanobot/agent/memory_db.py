@@ -15,10 +15,12 @@ from nanobot.utils.helpers import ensure_dir
 SCHEMA_VERSION = 1
 
 _SECTION_ORDER = (
-    ("user_info", "User Information", "(Important facts about the user)"),
-    ("preferences", "Preferences", "(User preferences learned over time)"),
-    ("project_context", "Project Context", "(Information about ongoing projects)"),
-    ("important_notes", "Important Notes", "(Things to remember)"),
+    ("personal_profile", "Personal Profile", "(Stable background information about the user)"),
+    ("preferences", "Preferences", "(How the user prefers to communicate and collaborate)"),
+    ("constraints", "Constraints", "(Rules, boundaries, and requirements that must be respected)"),
+    ("projects", "Projects", "(Information about ongoing learning and work projects)"),
+    ("daily_life", "Daily Life", "(Daily routines, interests, and hobbies)"),
+    ("plans_commitments", "Plans and Commitments", "(Future plans, commitments, deadlines, and to-dos)"),
 )
 _SECTION_INDEX = {key: (title, placeholder) for key, title, placeholder in _SECTION_ORDER}
 _TITLE_TO_MAIN_CLASS = {title: key for key, title, _ in _SECTION_ORDER}
@@ -224,13 +226,7 @@ class MemoryDatabase:
                     main_class text not null,
                     sub_class text not null default '',
                     text text not null,
-                    confidence real not null default 0.0,
-                    priority real not null default 0.0,
-                    status text not null default 'active',
-                    valid_from text,
-                    valid_to text,
-                    value_json text,
-                    version integer not null default 1
+                    confidence real not null default 0.0
                 );
 
                 create table if not exists memory_evidence (
@@ -330,12 +326,6 @@ class MemoryDatabase:
         text: str,
         sub_class: str = "",
         confidence: float = 0.0,
-        priority: float = 0.0,
-        status: str = "active",
-        valid_from: str | None = None,
-        valid_to: str | None = None,
-        value: dict[str, Any] | None = None,
-        version: int = 1,
     ) -> None:
         self.initialize()
         _validate_main_class(main_class)
@@ -343,20 +333,13 @@ class MemoryDatabase:
             conn.execute(
                 """
                 insert into canonical_memories(
-                    memory_id, main_class, sub_class, text, confidence,
-                    priority, status, valid_from, valid_to, value_json, version
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    memory_id, main_class, sub_class, text, confidence
+                ) values (?, ?, ?, ?, ?)
                 on conflict(memory_id) do update set
                     main_class=excluded.main_class,
                     sub_class=excluded.sub_class,
                     text=excluded.text,
-                    confidence=excluded.confidence,
-                    priority=excluded.priority,
-                    status=excluded.status,
-                    valid_from=excluded.valid_from,
-                    valid_to=excluded.valid_to,
-                    value_json=excluded.value_json,
-                    version=excluded.version
+                    confidence=excluded.confidence
                 """,
                 (
                     memory_id,
@@ -364,12 +347,6 @@ class MemoryDatabase:
                     sub_class,
                     text,
                     confidence,
-                    priority,
-                    status,
-                    valid_from,
-                    valid_to,
-                    json.dumps(value, ensure_ascii=False) if value is not None else None,
-                    version,
                 ),
             )
             self._rebuild_fts(conn)
@@ -405,8 +382,7 @@ class MemoryDatabase:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                select memory_id, main_class, sub_class, text, confidence,
-                       priority, status, valid_from, valid_to, value_json, version
+                select memory_id, main_class, sub_class, text, confidence
                 from canonical_memories
                 order by main_class asc, sub_class asc, memory_id asc
                 """
@@ -454,9 +430,8 @@ class MemoryDatabase:
                 conn.execute(
                     """
                     insert into canonical_memories(
-                        memory_id, main_class, sub_class, text, confidence,
-                        priority, status, valid_from, valid_to, value_json, version
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        memory_id, main_class, sub_class, text, confidence
+                    ) values (?, ?, ?, ?, ?)
                     """,
                     (
                         str(memory.get("memory_id") or _canonical_memory_id(main_class, sub_class, text)),
@@ -464,12 +439,6 @@ class MemoryDatabase:
                         sub_class,
                         text,
                         float(memory.get("confidence", 0.0) or 0.0),
-                        float(memory.get("priority", 0.0) or 0.0),
-                        str(memory.get("status") or "active"),
-                        memory.get("valid_from"),
-                        memory.get("valid_to"),
-                        json.dumps(memory.get("value"), ensure_ascii=False) if memory.get("value") is not None else None,
-                        int(memory.get("version", 1) or 1),
                     ),
                 )
                 if event_id is not None:
@@ -498,8 +467,7 @@ class MemoryDatabase:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                select c.memory_id, c.main_class, c.sub_class, c.text, c.confidence,
-                       c.priority, c.status, c.valid_from, c.valid_to, c.value_json, c.version
+                select c.memory_id, c.main_class, c.sub_class, c.text, c.confidence
                 from canonical_fts f
                 join canonical_memories c on c.memory_id = f.memory_id
                 where canonical_fts match ?

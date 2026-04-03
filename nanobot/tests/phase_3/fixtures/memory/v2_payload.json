@@ -13,17 +13,17 @@
   ],
   "tool_arguments": {
     "history_entry": "[2026-04-01 11:00] User works on Linux, prefers concise answers, and the active project is nanobot.",
-    "memory_update": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## User Information\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Project Context\n\n- active_project: The active project is nanobot.\n\n## Important Notes\n\n(Things to remember)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*"
+    "memory_update": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## Personal Profile\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Constraints\n\n(Rules, boundaries, and requirements that must be respected)\n\n## Projects\n\n- active_project: The active project is nanobot.\n\n## Daily Life\n\n(Daily routines, interests, and hobbies)\n\n## Plans and Commitments\n\n(Future plans, commitments, deadlines, and to-dos)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*"
   },
-  "expected_memory_markdown": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## User Information\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Project Context\n\n- active_project: The active project is nanobot.\n\n## Important Notes\n\n(Things to remember)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*",
+  "expected_memory_markdown": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## Personal Profile\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Constraints\n\n(Rules, boundaries, and requirements that must be respected)\n\n## Projects\n\n- active_project: The active project is nanobot.\n\n## Daily Life\n\n(Daily routines, interests, and hobbies)\n\n## Plans and Commitments\n\n(Future plans, commitments, deadlines, and to-dos)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*",
   "expected_history_markdown": "[2026-04-01 11:00] User works on Linux, prefers concise answers, and the active project is nanobot.",
   "expected": {
-    "main_classes": ["preferences", "project_context", "user_info"],
-    "sub_classes": ["reply_style", "active_project", "environment"],
+    "main_classes": ["personal_profile", "preferences", "projects"],
+    "sub_classes": ["environment", "reply_style", "active_project"],
     "texts": [
+      "User works on Linux.",
       "User prefers concise answers.",
-      "The active project is nanobot.",
-      "User works on Linux."
+      "The active project is nanobot."
     ]
   }
 }

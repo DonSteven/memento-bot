@@ -15,7 +15,7 @@
     "history_entry": "[2026-04-01 09:00] User works on Linux and prefers concise answers.",
     "canonical_memories": [
       {
-        "main_class": "user_info",
+        "main_class": "personal_profile",
         "sub_class": "environment",
         "text": "User works on Linux.",
         "confidence": 0.88
@@ -28,6 +28,6 @@
       }
     ]
   },
-  "expected_memory_markdown": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## User Information\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Project Context\n\n(Information about ongoing projects)\n\n## Important Notes\n\n(Things to remember)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*",
+  "expected_memory_markdown": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## Personal Profile\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Constraints\n\n(Rules, boundaries, and requirements that must be respected)\n\n## Projects\n\n(Information about ongoing learning and work projects)\n\n## Daily Life\n\n(Daily routines, interests, and hobbies)\n\n## Plans and Commitments\n\n(Future plans, commitments, deadlines, and to-dos)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*",
   "expected_history_markdown": "[2026-04-01 09:00] User works on Linux and prefers concise answers."
 }

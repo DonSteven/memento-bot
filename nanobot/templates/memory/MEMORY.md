@@ -2,21 +2,29 @@
 
 This file stores important information that should persist across sessions.
 
-## User Information
+## Personal Profile
 
-(Important facts about the user)
+(Stable background information about the user)
 
 ## Preferences
 
-(User preferences learned over time)
+(How the user prefers to communicate and collaborate)
 
-## Project Context
+## Constraints
 
-(Information about ongoing projects)
+(Rules, boundaries, and requirements that must be respected)
 
-## Important Notes
+## Projects
 
-(Things to remember)
+(Information about ongoing learning and work projects)
+
+## Daily Life
+
+(Daily routines, interests, and hobbies)
+
+## Plans and Commitments
+
+(Future plans, commitments, deadlines, and to-dos)
 
 ---
 

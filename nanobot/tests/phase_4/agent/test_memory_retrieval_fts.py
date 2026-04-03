@@ -20,7 +20,7 @@ def test_query_canonical_memories_returns_relevant_matches(tmp_path) -> None:
     )
     db.upsert_canonical_memory(
         memory_id="mem_project",
-        main_class="project_context",
+        main_class="projects",
         sub_class="active_project",
         text="The active project is nanobot.",
     )
