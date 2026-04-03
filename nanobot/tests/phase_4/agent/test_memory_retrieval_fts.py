@@ -1,6 +1,7 @@
 # Phase 4 test content:
 # - verifies canonical memories are queryable through SQLite FTS5
 # - verifies FTS returns only relevant canonical memories and respects empty-query behavior
+# - verifies retrieval results still expose the simplified canonical snapshot fields
 # How to test:
 # - run this file directly with:
 #   uv run --extra dev pytest -q nanobot/tests/phase_4/agent/test_memory_retrieval_fts.py
@@ -57,3 +58,25 @@ def test_query_canonical_memories_handles_simple_word_variants(tmp_path) -> None
 
     assert len(results) == 1
     assert results[0]["memory_id"] == "mem_pref"
+
+
+def test_query_canonical_memories_returns_active_snapshot_fields_only(tmp_path) -> None:
+    db = MemoryDatabase(tmp_path)
+    db.upsert_canonical_memory(
+        memory_id="mem_pref",
+        main_class="preferences",
+        sub_class="reply_style",
+        text="User prefers concise answers.",
+        confidence=0.9,
+    )
+
+    results = db.query_canonical_memories("concise answers", limit=5)
+
+    assert len(results) == 1
+    assert results[0] == {
+        "memory_id": "mem_pref",
+        "main_class": "preferences",
+        "sub_class": "reply_style",
+        "text": "User prefers concise answers.",
+        "confidence": 0.9,
+    }
