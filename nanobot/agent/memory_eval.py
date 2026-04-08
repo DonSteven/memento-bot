@@ -448,3 +448,407 @@ def save_phase6_report(report: dict[str, Any], save_dir: Path) -> dict[str, Path
 MemoryProviderFactory = Callable[[dict[str, Any]], LLMProvider]
 
 
+def load_memory_extraction_cases(cases_path: Path) -> list[dict[str, Any]]:
+    """Load extraction evaluation cases from a JSON file."""
+    payload = json.loads(cases_path.read_text(encoding="utf-8"))
+    cases = payload.get("cases") if isinstance(payload, dict) else payload
+    if not isinstance(cases, list):
+        raise ValueError("Memory extraction cases must be a list or a dict with a 'cases' list")
+    return cases
+
+
+def _normalize_memory_snapshot(items: list[dict[str, Any]]) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        status = str(item.get("status") or "active").strip() or "active"
+        if status != "active":
+            continue
+
+        main_class = str(item.get("main_class") or "").strip()
+        sub_class = " ".join(str(item.get("sub_class") or "").split())
+        text = " ".join(str(item.get("text") or "").split())
+        if not main_class or not text:
+            continue
+
+        key = (main_class, sub_class, text)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append({
+            "main_class": main_class,
+            "sub_class": sub_class,
+            "text": text,
+        })
+
+    return sorted(
+        normalized,
+        key=lambda item: (
+            item["main_class"],
+            item["sub_class"],
+            item["text"],
+        ),
+    )
+
+
+def _snapshot_keys(items: list[dict[str, str]]) -> set[tuple[str, str, str]]:
+    return {
+        (
+            item["main_class"],
+            item["sub_class"],
+            item["text"],
+        )
+        for item in items
+    }
+
+
+def _serialize_snapshot_keys(keys: set[tuple[str, str, str]]) -> list[dict[str, str]]:
+    return [
+        {
+            "main_class": main_class,
+            "sub_class": sub_class,
+            "text": text,
+        }
+        for main_class, sub_class, text in sorted(keys)
+    ]
+
+
+def _snapshot_by_slot(items: list[dict[str, str]]) -> dict[tuple[str, str], set[str]]:
+    grouped: dict[tuple[str, str], set[str]] = {}
+    for item in items:
+        slot = (item["main_class"], item["sub_class"])
+        grouped.setdefault(slot, set()).add(item["text"])
+    return grouped
+
+
+def _precision_recall_f1(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
+    precision = tp / (tp + fp) if tp + fp else 1.0
+    recall = tp / (tp + fn) if tp + fn else 1.0
+    if precision + recall == 0:
+        return precision, recall, 0.0
+    return precision, recall, (2 * precision * recall) / (precision + recall)
+
+
+def _mean_or_none(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def _score_memory_extraction(
+    *,
+    prior_snapshot: list[dict[str, str]],
+    predicted_snapshot: list[dict[str, str]],
+    gold_snapshot: list[dict[str, str]],
+) -> dict[str, Any]:
+    prior_keys = _snapshot_keys(prior_snapshot)
+    predicted_keys = _snapshot_keys(predicted_snapshot)
+    gold_keys = _snapshot_keys(gold_snapshot)
+
+    expected_added = gold_keys - prior_keys
+    expected_removed = prior_keys - gold_keys
+
+    tp = len(predicted_keys & gold_keys)
+    fp = len(predicted_keys - gold_keys)
+    fn = len(gold_keys - predicted_keys)
+    precision, recall, f1 = _precision_recall_f1(tp, fp, fn)
+
+    added_correct = len(expected_added & predicted_keys)
+    removed_correct = len(expected_removed - predicted_keys)
+    stale_retained = len(expected_removed & predicted_keys)
+
+    prior_by_slot = _snapshot_by_slot(prior_snapshot)
+    predicted_by_slot = _snapshot_by_slot(predicted_snapshot)
+    gold_by_slot = _snapshot_by_slot(gold_snapshot)
+
+    updated_slots = [
+        slot
+        for slot in sorted(set(prior_by_slot) | set(gold_by_slot))
+        if prior_by_slot.get(slot) and gold_by_slot.get(slot) and prior_by_slot.get(slot) != gold_by_slot.get(slot)
+    ]
+    multi_slots = [
+        slot
+        for slot, texts in sorted(gold_by_slot.items())
+        if len(texts) > 1
+    ]
+
+    update_accuracy = (
+        float(all(predicted_by_slot.get(slot, set()) == gold_by_slot.get(slot, set()) for slot in updated_slots))
+        if updated_slots
+        else None
+    )
+    multi_memory_preservation = (
+        float(all(predicted_by_slot.get(slot, set()) == gold_by_slot.get(slot, set()) for slot in multi_slots))
+        if multi_slots
+        else None
+    )
+    no_op_accuracy = float(predicted_keys == gold_keys) if not expected_added and not expected_removed else None
+
+    return {
+        "true_positive_count": tp,
+        "false_positive_count": fp,
+        "false_negative_count": fn,
+        "predicted_count": len(predicted_keys),
+        "gold_count": len(gold_keys),
+        "prior_count": len(prior_keys),
+        "expected_added_count": len(expected_added),
+        "expected_removed_count": len(expected_removed),
+        "added_correct_count": added_correct,
+        "removed_correct_count": removed_correct,
+        "stale_retained_count": stale_retained,
+        "snapshot_precision": precision,
+        "snapshot_recall": recall,
+        "snapshot_f1": f1,
+        "exact_match": predicted_keys == gold_keys,
+        "addition_recall": (added_correct / len(expected_added)) if expected_added else None,
+        "deletion_accuracy": (removed_correct / len(expected_removed)) if expected_removed else None,
+        "stale_retention_rate": (stale_retained / len(expected_removed)) if expected_removed else None,
+        "false_insertion_rate": (fp / len(predicted_keys)) if predicted_keys else 0.0,
+        "no_op_accuracy": no_op_accuracy,
+        "update_accuracy": update_accuracy,
+        "multi_memory_preservation": multi_memory_preservation,
+        "missing_items": _serialize_snapshot_keys(gold_keys - predicted_keys),
+        "extra_items": _serialize_snapshot_keys(predicted_keys - gold_keys),
+        "expected_added_items": _serialize_snapshot_keys(expected_added),
+        "expected_removed_items": _serialize_snapshot_keys(expected_removed),
+    }
+
+
+def _inject_prior_memory(workspace: Path, prior_memory_markdown: str) -> None:
+    if not prior_memory_markdown.strip():
+        return
+    memory_dir = workspace / "memory"
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    (memory_dir / "MEMORY.md").write_text(prior_memory_markdown, encoding="utf-8")
+
+
+async def _run_v2_memory_extraction_case(
+    *,
+    case: dict[str, Any],
+    provider_factory: MemoryProviderFactory,
+    model: str,
+) -> dict[str, Any]:
+    case_id = str(case.get("case_id") or "case")
+    with TemporaryDirectory(prefix=f"nanobot-memory-extraction-{case_id}-v2-") as tmp:
+        workspace = Path(tmp)
+        _inject_prior_memory(workspace, str(case.get("prior_memory_markdown") or ""))
+
+        store = MemoryStore(workspace, mode="v2")
+        provider = provider_factory(case)
+        result = await store.consolidate(case.get("conversation") or [], provider, model)
+
+        memory_text = store.memory_file.read_text(encoding="utf-8") if store.memory_file.exists() else ""
+        history_text = store.history_file.read_text(encoding="utf-8") if store.history_file.exists() else ""
+        assert store.v2_db is not None
+        predicted_snapshot = store.v2_db.list_canonical_memories(active_only=True)
+
+        return {
+            "consolidate_returned_true": result is True,
+            "raw_archive_detected": "[RAW]" in history_text,
+            "predicted_snapshot": _normalize_memory_snapshot(predicted_snapshot),
+            "rendered_memory_markdown": memory_text,
+            "rendered_history_markdown": history_text,
+        }
+
+
+def _aggregate_v2_memory_extraction_metrics(case_results: list[dict[str, Any]]) -> dict[str, Any]:
+    tp_total = fp_total = fn_total = 0
+    predicted_total = gold_total = 0
+    expected_added_total = added_correct_total = 0
+    expected_removed_total = removed_correct_total = stale_retained_total = 0
+    exact_matches = 0
+    consolidate_successes = 0
+    raw_archives = 0
+
+    no_op_values: list[float] = []
+    update_values: list[float] = []
+    multi_values: list[float] = []
+
+    for result in case_results:
+        metrics = result["v2"]["metrics"]
+        tp_total += metrics["true_positive_count"]
+        fp_total += metrics["false_positive_count"]
+        fn_total += metrics["false_negative_count"]
+        predicted_total += metrics["predicted_count"]
+        gold_total += metrics["gold_count"]
+        expected_added_total += metrics["expected_added_count"]
+        added_correct_total += metrics["added_correct_count"]
+        expected_removed_total += metrics["expected_removed_count"]
+        removed_correct_total += metrics["removed_correct_count"]
+        stale_retained_total += metrics["stale_retained_count"]
+        exact_matches += int(metrics["exact_match"])
+        consolidate_successes += int(result["v2"]["consolidate_returned_true"])
+        raw_archives += int(result["v2"]["raw_archive_detected"])
+
+        if metrics["no_op_accuracy"] is not None:
+            no_op_values.append(metrics["no_op_accuracy"])
+        if metrics["update_accuracy"] is not None:
+            update_values.append(metrics["update_accuracy"])
+        if metrics["multi_memory_preservation"] is not None:
+            multi_values.append(metrics["multi_memory_preservation"])
+
+    precision, recall, f1 = _precision_recall_f1(tp_total, fp_total, fn_total)
+
+    return {
+        "case_count": len(case_results),
+        "snapshot_precision": precision,
+        "snapshot_recall": recall,
+        "snapshot_f1": f1,
+        "exact_match_rate": (exact_matches / len(case_results)) if case_results else 0.0,
+        "addition_recall": (added_correct_total / expected_added_total) if expected_added_total else None,
+        "deletion_accuracy": (removed_correct_total / expected_removed_total) if expected_removed_total else None,
+        "stale_retention_rate": (stale_retained_total / expected_removed_total) if expected_removed_total else None,
+        "false_insertion_rate": (fp_total / predicted_total) if predicted_total else 0.0,
+        "no_op_accuracy": _mean_or_none(no_op_values),
+        "update_accuracy": _mean_or_none(update_values),
+        "multi_memory_preservation_rate": _mean_or_none(multi_values),
+        "consolidate_success_rate": (consolidate_successes / len(case_results)) if case_results else 0.0,
+        "raw_archive_rate": (raw_archives / len(case_results)) if case_results else 0.0,
+        "true_positive_count": tp_total,
+        "false_positive_count": fp_total,
+        "false_negative_count": fn_total,
+        "predicted_count": predicted_total,
+        "gold_count": gold_total,
+        "expected_added_count": expected_added_total,
+        "expected_removed_count": expected_removed_total,
+    }
+
+
+async def _run_memory_extraction_eval_async(
+    cases: list[dict[str, Any]],
+    *,
+    v2_provider_factory: MemoryProviderFactory,
+    model: str,
+    cases_path: Path | None = None,
+) -> dict[str, Any]:
+    if not cases:
+        raise ValueError("At least one memory extraction evaluation case is required")
+
+    case_results: list[dict[str, Any]] = []
+    for raw_case in cases:
+        case = dict(raw_case)
+        prior_markdown = str(case.get("prior_memory_markdown") or "")
+        prior_snapshot = _normalize_memory_snapshot(
+            parse_memory_markdown(prior_markdown) if prior_markdown.strip() else []
+        )
+        gold_snapshot = _normalize_memory_snapshot(case.get("gold_snapshot") or [])
+
+        v2_run = await _run_v2_memory_extraction_case(
+            case=case,
+            provider_factory=v2_provider_factory,
+            model=model,
+        )
+
+        v2_metrics = _score_memory_extraction(
+            prior_snapshot=prior_snapshot,
+            predicted_snapshot=v2_run["predicted_snapshot"],
+            gold_snapshot=gold_snapshot,
+        )
+
+        case_results.append({
+            "case_id": str(case.get("case_id") or f"case_{len(case_results) + 1}"),
+            "case_type": str(case.get("case_type") or "unspecified"),
+            "conversation_message_count": len(case.get("conversation") or []),
+            "prior_snapshot": prior_snapshot,
+            "gold_snapshot": gold_snapshot,
+            "v2": {
+                **v2_run,
+                "metrics": v2_metrics,
+            },
+        })
+
+    v2_metrics = _aggregate_v2_memory_extraction_metrics(case_results)
+
+    return {
+        "report_version": REPORT_VERSION,
+        "evaluation": "memory_extraction",
+        "cases_source": str(cases_path.resolve()) if cases_path else "inline",
+        "temporary_workspace_execution": True,
+        "mode": "v2",
+        "model": model,
+        "total_cases": len(case_results),
+        "metrics": v2_metrics,
+        "cases": case_results,
+    }
+
+
+def run_memory_extraction_eval(
+    *,
+    cases: list[dict[str, Any]] | None = None,
+    cases_path: Path | None = None,
+    v2_provider_factory: MemoryProviderFactory,
+    model: str,
+) -> dict[str, Any]:
+    """Run a v2 extraction evaluation over temporary local workspaces."""
+    loaded_cases = cases if cases is not None else load_memory_extraction_cases(cases_path) if cases_path else None
+    if loaded_cases is None:
+        raise ValueError("Provide either cases or cases_path for memory extraction evaluation")
+    return asyncio.run(
+        _run_memory_extraction_eval_async(
+            loaded_cases,
+            v2_provider_factory=v2_provider_factory,
+            model=model,
+            cases_path=cases_path,
+        )
+    )
+
+
+def _format_metric(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.3f}"
+
+
+def render_memory_extraction_report_markdown(report: dict[str, Any]) -> str:
+    """Render the v2 extraction evaluation report as Markdown."""
+    lines = [
+        "# Memory Extraction Evaluation Report",
+        "",
+        f"- Report Version: {report['report_version']}",
+        f"- Cases Source: `{report['cases_source']}`",
+        f"- Total Cases: {report['total_cases']}",
+        f"- Temporary Workspaces: {report['temporary_workspace_execution']}",
+        f"- Mode: `{report['mode']}`",
+        f"- Model: `{report['model']}`",
+        "",
+        "## V2 Metrics",
+        "",
+        "| Precision | Recall | F1 | Exact Match | Add Recall | Delete Acc | Stale Retention | No-op Acc | Update Acc | Multi-memory |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+
+    metrics = report["metrics"]
+    lines.extend([
+        f"| {_format_metric(metrics['snapshot_precision'])} | {_format_metric(metrics['snapshot_recall'])} | "
+        f"{_format_metric(metrics['snapshot_f1'])} | {_format_metric(metrics['exact_match_rate'])} | "
+        f"{_format_metric(metrics['addition_recall'])} | {_format_metric(metrics['deletion_accuracy'])} | "
+        f"{_format_metric(metrics['stale_retention_rate'])} | {_format_metric(metrics['no_op_accuracy'])} | "
+        f"{_format_metric(metrics['update_accuracy'])} | {_format_metric(metrics['multi_memory_preservation_rate'])} |",
+        "",
+        "## Case Results",
+        "",
+        "| Case | Type | V2 F1 | V2 Missing | V2 Extra | Raw Archive |",
+        "| --- | --- | ---: | ---: | ---: | --- |",
+    ])
+
+    for case in report["cases"]:
+        v2_metrics = case["v2"]["metrics"]
+        lines.append(
+            f"| {case['case_id']} | {case['case_type']} | {_format_metric(v2_metrics['snapshot_f1'])} | "
+            f"{len(v2_metrics['missing_items'])} | {len(v2_metrics['extra_items'])} | "
+            f"{case['v2']['raw_archive_detected']} |"
+        )
+
+    return "\n".join(lines)
+
+
+def save_memory_extraction_report(report: dict[str, Any], save_dir: Path) -> dict[str, Path]:
+    """Save both JSON and Markdown copies of the extraction evaluation report."""
+    save_dir.mkdir(parents=True, exist_ok=True)
+    json_path = save_dir / "memory_extraction_eval_report.json"
+    markdown_path = save_dir / "memory_extraction_eval_report.md"
+    json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    markdown_path.write_text(render_memory_extraction_report_markdown(report), encoding="utf-8")
+    return {"json": json_path, "markdown": markdown_path}
