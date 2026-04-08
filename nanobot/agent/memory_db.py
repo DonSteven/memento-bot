@@ -12,7 +12,8 @@ from typing import Any
 from nanobot.utils.helpers import ensure_dir
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
+MEMORY_STATUSES = ("active", "superseded", "archived", "uncertain")
 
 _SECTION_ORDER = (
     ("personal_profile", "Personal Profile", "(Stable background information about the user)"),
@@ -31,11 +32,19 @@ def _validate_main_class(main_class: str) -> None:
         raise ValueError(f"Unsupported main_class: {main_class}")
 
 
+def _validate_status(status: str) -> None:
+    if status not in MEMORY_STATUSES:
+        raise ValueError(f"Unsupported status: {status}")
+
+
 def render_memory_markdown(memories: list[dict[str, Any]]) -> str:
     """Render canonical memories into the legacy MEMORY.md view.
         把“结构化的长期记忆列表”渲染成一个给人看的 MEMORY.md 文本"""
     grouped: dict[str, list[dict[str, Any]]] = {key: [] for key, _, _ in _SECTION_ORDER}
     for memory in memories:
+        status = str(memory.get("status") or "active").strip() or "active"
+        if status != "active":
+            continue
         main_class = str(memory["main_class"])
         _validate_main_class(main_class)
         grouped[main_class].append(memory)
@@ -98,7 +107,9 @@ def render_history_markdown(events: list[dict[str, Any]]) -> str:
     )
     entries = [str(event.get("history_text") or "").strip() for event in ordered]
     entries = [entry for entry in entries if entry]
-    return "\n\n".join(entries)
+    if not entries:
+        return ""
+    return "\n\n".join(entries) + "\n\n"
 
 
 def _canonical_memory_id(main_class: str, sub_class: str, text: str) -> str:
@@ -170,12 +181,13 @@ def parse_memory_markdown(content: str) -> list[dict[str, Any]]:
             "main_class": current_main_class,
             "sub_class": sub_class,
             "text": text,
+            "status": "active",
         })
     return memories
 
 
 class MemoryDatabase:
-    """Minimal SQLite storage base for raw events, canonical memories, and evidence links."""
+    """Minimal SQLite storage base for raw events and canonical memories."""
 
     def __init__(
         self,
@@ -216,7 +228,7 @@ class MemoryDatabase:
                     main_class text,
                     sub_class text,
                     candidate_type text,
-                    confidence real not null default 0.0,
+                    status text,
                     source_start_idx integer,
                     source_end_idx integer
                 );
@@ -226,17 +238,10 @@ class MemoryDatabase:
                     main_class text not null,
                     sub_class text not null default '',
                     text text not null,
-                    confidence real not null default 0.0
+                    status text not null
                 );
 
-                create table if not exists memory_evidence (
-                    memory_id text not null,
-                    event_id text not null,
-                    weight real not null default 1.0,
-                    primary key (memory_id, event_id),
-                    foreign key (memory_id) references canonical_memories(memory_id) on delete cascade,
-                    foreign key (event_id) references raw_events(event_id) on delete cascade
-                );
+                drop table if exists memory_evidence;
 
                 create virtual table if not exists canonical_fts using fts5(
                     memory_id UNINDEXED,
@@ -246,6 +251,7 @@ class MemoryDatabase:
                 );
                 """
             )
+            self._validate_runtime_schema(conn)
             conn.execute(
                 """
                 insert into metadata(key, value) values('schema_version', ?)
@@ -256,6 +262,29 @@ class MemoryDatabase:
             self._rebuild_fts(conn)
 
     @staticmethod
+    def _validate_runtime_schema(conn: sqlite3.Connection) -> None:
+        required_columns = {
+            "raw_events": {
+                "event_id", "ts", "session_key", "history_text", "plain_text",
+                "extracted_json", "main_class", "sub_class", "candidate_type",
+                "status", "source_start_idx", "source_end_idx",
+            },
+            "canonical_memories": {"memory_id", "main_class", "sub_class", "text", "status"},
+        }
+        for table_name, expected in required_columns.items():
+            columns = {
+                str(row["name"])
+                for row in conn.execute(f"pragma table_info({table_name})").fetchall()
+            }
+            if not columns:
+                continue
+            if "confidence" in columns or not expected.issubset(columns):
+                raise RuntimeError(
+                    "Existing memory.db uses an unsupported memory schema. "
+                    "Delete memory/memory.db manually and rerun nanobot."
+                )
+
+    @staticmethod
     def _rebuild_fts(conn: sqlite3.Connection) -> None:
         conn.execute("delete from canonical_fts")
         conn.execute(
@@ -263,6 +292,7 @@ class MemoryDatabase:
             insert into canonical_fts(memory_id, main_class, sub_class, text)
             select memory_id, main_class, sub_class, text
             from canonical_memories
+            where status = 'active'
             """
         )
 
@@ -286,36 +316,30 @@ class MemoryDatabase:
         main_class: str | None = None,
         sub_class: str | None = None,
         candidate_type: str | None = None,
-        confidence: float = 0.0,
+        status: str | None = None,
         source_start_idx: int | None = None,
         source_end_idx: int | None = None,
     ) -> None:
         self.initialize()
         if main_class is not None:
             _validate_main_class(main_class)
+        if status is not None:
+            _validate_status(status)
         with self.connect() as conn:
-            conn.execute(
-                """
-                insert into raw_events(
-                    event_id, ts, session_key, history_text, plain_text,
-                    extracted_json, main_class, sub_class, candidate_type,
-                    confidence, source_start_idx, source_end_idx
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    event_id,
-                    ts,
-                    session_key,
-                    history_text,
-                    plain_text,
-                    json.dumps(extracted, ensure_ascii=False) if extracted is not None else None,
-                    main_class,
-                    sub_class,
-                    candidate_type,
-                    confidence,
-                    source_start_idx,
-                    source_end_idx,
-                ),
+            self._insert_raw_event_row(
+                conn,
+                event_id=event_id,
+                ts=ts,
+                session_key=session_key,
+                history_text=history_text,
+                plain_text=plain_text,
+                extracted=extracted,
+                main_class=main_class,
+                sub_class=sub_class,
+                candidate_type=candidate_type,
+                status=status,
+                source_start_idx=source_start_idx,
+                source_end_idx=source_end_idx,
             )
 
     def upsert_canonical_memory(
@@ -325,43 +349,32 @@ class MemoryDatabase:
         main_class: str,
         text: str,
         sub_class: str = "",
-        confidence: float = 0.0,
+        status: str,
     ) -> None:
         self.initialize()
         _validate_main_class(main_class)
+        _validate_status(status)
         with self.connect() as conn:
             conn.execute(
                 """
                 insert into canonical_memories(
-                    memory_id, main_class, sub_class, text, confidence
+                    memory_id, main_class, sub_class, text, status
                 ) values (?, ?, ?, ?, ?)
                 on conflict(memory_id) do update set
                     main_class=excluded.main_class,
                     sub_class=excluded.sub_class,
                     text=excluded.text,
-                    confidence=excluded.confidence
+                    status=excluded.status
                 """,
                 (
                     memory_id,
                     main_class,
                     sub_class,
                     text,
-                    confidence,
+                    status,
                 ),
             )
             self._rebuild_fts(conn)
-
-    def add_evidence_link(self, *, memory_id: str, event_id: str, weight: float = 1.0) -> None:
-        self.initialize()
-        with self.connect() as conn:
-            conn.execute(
-                """
-                insert into memory_evidence(memory_id, event_id, weight)
-                values (?, ?, ?)
-                on conflict(memory_id, event_id) do update set weight=excluded.weight
-                """,
-                (memory_id, event_id, weight),
-            )
 
     def list_raw_events(self) -> list[dict[str, Any]]:
         self.initialize()
@@ -370,39 +383,29 @@ class MemoryDatabase:
                 """
                 select event_id, ts, session_key, history_text, plain_text,
                        extracted_json, main_class, sub_class, candidate_type,
-                       confidence, source_start_idx, source_end_idx
+                       status, source_start_idx, source_end_idx
                 from raw_events
                 order by ts asc, event_id asc
                 """
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def list_canonical_memories(self) -> list[dict[str, Any]]:
+    def list_canonical_memories(self, *, active_only: bool = False) -> list[dict[str, Any]]:
         self.initialize()
+        where_clause = "where status = 'active'" if active_only else ""
         with self.connect() as conn:
             rows = conn.execute(
-                """
-                select memory_id, main_class, sub_class, text, confidence
+                f"""
+                select memory_id, main_class, sub_class, text, status
                 from canonical_memories
+                {where_clause}
                 order by main_class asc, sub_class asc, memory_id asc
                 """
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def list_evidence_links(self) -> list[dict[str, Any]]:
-        self.initialize()
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                select memory_id, event_id, weight
-                from memory_evidence
-                order by memory_id asc, event_id asc
-                """
-            ).fetchall()
-        return [dict(row) for row in rows]
-
     def render_memory_view(self) -> str:
-        return render_memory_markdown(self.list_canonical_memories())
+        return render_memory_markdown(self.list_canonical_memories(active_only=True))
 
     def render_history_view(self) -> str:
         return render_history_markdown(self.list_raw_events())
@@ -415,47 +418,121 @@ class MemoryDatabase:
     def replace_canonical_snapshot(
         self,
         memories: list[dict[str, Any]],
-        *,
-        event_id: str | None = None,
     ) -> None:
         """Replace the canonical snapshot with a new set of canonical memories."""
         self.initialize()
         with self.connect() as conn:
-            conn.execute("delete from canonical_memories")
-            for memory in memories:
-                main_class = str(memory["main_class"])
-                _validate_main_class(main_class)
-                sub_class = str(memory.get("sub_class") or "")
-                text = str(memory.get("text") or "")
-                conn.execute(
-                    """
-                    insert into canonical_memories(
-                        memory_id, main_class, sub_class, text, confidence
-                    ) values (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        str(memory.get("memory_id") or _canonical_memory_id(main_class, sub_class, text)),
-                        main_class,
-                        sub_class,
-                        text,
-                        float(memory.get("confidence", 0.0) or 0.0),
-                    ),
-                )
-                if event_id is not None:
-                    conn.execute(
-                        """
-                        insert into memory_evidence(memory_id, event_id, weight)
-                        values (?, ?, ?)
-                        """,
-                        (
-                            str(memory.get("memory_id") or _canonical_memory_id(main_class, sub_class, text)),
-                            event_id,
-                            1.0,
-                        ),
-                    )
-            self._rebuild_fts(conn)
+            self._replace_canonical_snapshot_rows(conn, memories)
 
-    def query_canonical_memories(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+    def write_structured_snapshot(
+        self,
+        *,
+        event_id: str,
+        ts: str,
+        session_key: str,
+        history_text: str,
+        plain_text: str = "",
+        extracted: dict[str, Any] | None = None,
+        candidate_type: str | None = None,
+        memories: list[dict[str, Any]],
+    ) -> None:
+        """Write one raw event plus the full canonical snapshot before re-rendering views."""
+        self.initialize()
+        with self.connect() as conn:
+            self._insert_raw_event_row(
+                conn,
+                event_id=event_id,
+                ts=ts,
+                session_key=session_key,
+                history_text=history_text,
+                plain_text=plain_text,
+                extracted=extracted,
+                candidate_type=candidate_type,
+            )
+            self._replace_canonical_snapshot_rows(conn, memories)
+        self.write_views()
+
+    @staticmethod
+    def _insert_raw_event_row(
+        conn: sqlite3.Connection,
+        *,
+        event_id: str,
+        ts: str,
+        session_key: str,
+        history_text: str,
+        plain_text: str = "",
+        extracted: dict[str, Any] | None = None,
+        main_class: str | None = None,
+        sub_class: str | None = None,
+        candidate_type: str | None = None,
+        status: str | None = None,
+        source_start_idx: int | None = None,
+        source_end_idx: int | None = None,
+    ) -> None:
+        if main_class is not None:
+            _validate_main_class(main_class)
+        if status is not None:
+            _validate_status(status)
+        conn.execute(
+            """
+            insert into raw_events(
+                event_id, ts, session_key, history_text, plain_text,
+                extracted_json, main_class, sub_class, candidate_type,
+                status, source_start_idx, source_end_idx
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                ts,
+                session_key,
+                history_text,
+                plain_text,
+                json.dumps(extracted, ensure_ascii=False) if extracted is not None else None,
+                main_class,
+                sub_class,
+                candidate_type,
+                status,
+                source_start_idx,
+                source_end_idx,
+            ),
+        )
+
+    @staticmethod
+    def _replace_canonical_snapshot_rows(
+        conn: sqlite3.Connection,
+        memories: list[dict[str, Any]],
+    ) -> None:
+        conn.execute("delete from canonical_memories")
+        for memory in memories:
+            main_class = str(memory["main_class"])
+            _validate_main_class(main_class)
+            sub_class = str(memory.get("sub_class") or "")
+            text = str(memory.get("text") or "")
+            status = str(memory.get("status") or "").strip()
+            _validate_status(status)
+            conn.execute(
+                """
+                insert into canonical_memories(
+                    memory_id, main_class, sub_class, text, status
+                ) values (?, ?, ?, ?, ?)
+                """,
+                (
+                    str(memory.get("memory_id") or _canonical_memory_id(main_class, sub_class, text)),
+                    main_class,
+                    sub_class,
+                    text,
+                    status,
+                ),
+            )
+        MemoryDatabase._rebuild_fts(conn)
+
+    def query_canonical_memories(
+        self,
+        query: str,
+        limit: int = 5,
+        *,
+        active_only: bool = True,
+    ) -> list[dict[str, Any]]:
         """Retrieve canonical memories with SQLite FTS5."""
         self.initialize()
         query = query.strip()
@@ -464,13 +541,15 @@ class MemoryDatabase:
         fts_query = _build_fts_query(query)
         if not fts_query:
             return []
+        where_clause = "and c.status = 'active'" if active_only else ""
         with self.connect() as conn:
             rows = conn.execute(
-                """
-                select c.memory_id, c.main_class, c.sub_class, c.text, c.confidence
+                f"""
+                select c.memory_id, c.main_class, c.sub_class, c.text, c.status
                 from canonical_fts f
                 join canonical_memories c on c.memory_id = f.memory_id
                 where canonical_fts match ?
+                {where_clause}
                 order by bm25(canonical_fts), c.main_class asc, c.sub_class asc, c.memory_id asc
                 limit ?
                 """,

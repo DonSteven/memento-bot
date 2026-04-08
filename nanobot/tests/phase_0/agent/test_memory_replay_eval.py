@@ -1,6 +1,6 @@
 # Phase 0 test content:
 # - provides a fixture-driven legacy baseline for consolidation boundary selection
-# - gives later shadow/v2 ablation runs a stable comparison sample
+# - gives later v2/fts ablation runs a stable comparison sample
 # How to test:
 # - run this file directly with:
 #   uv run --extra dev pytest -q nanobot/tests/phase_0/agent/test_memory_replay_eval.py

@@ -4,7 +4,7 @@ Phase 6 closes the loop around the staged memory refactor by adding a repeatable
 
 ## What Phase 6 Adds
 
-- `nanobot.agent.memory_eval`: fixture-driven replay runner for `legacy`, `shadow`, `v2`, and `fts`
+- `nanobot.agent.memory_eval`: fixture-driven replay runner for `legacy` and `v2`
 - `nanobot memory-eval`: CLI entrypoint that prints the report and can save JSON and Markdown copies
 - Fixed-format mode summary:
   - `passed`
@@ -44,9 +44,8 @@ The Phase 6 replay suite currently covers:
 
 - `boundary_replay`
 - `legacy_consolidation_replay`
-- `shadow_snapshot_replay`
 - `v2_persistence_replay`
-- `fts_retrieval_replay`
+- `v2_retrieval_replay`
 
 The suite is deliberately offline and fixture-driven. It does not call a live LLM provider.
 
@@ -74,19 +73,7 @@ Conservative rollback:
 ```json
 {
   "memory": {
-    "mode": "legacy",
-    "retrieval_mode": "full_view"
-  }
-}
-```
-
-Intermediate rollback:
-
-```json
-{
-  "memory": {
-    "mode": "shadow",
-    "retrieval_mode": "full_view"
+    "mode": "legacy"
   }
 }
 ```
@@ -94,9 +81,6 @@ Intermediate rollback:
 Interpretation:
 
 - `legacy`: only file-backed `MEMORY.md` / `HISTORY.md`
-- `shadow`: keep legacy user-visible behavior, but continue sidecar observation
-- `shadow` currently evaluates the structured full-snapshot sidecar path plus raw-archive fallback behavior in Phase 2 tests
-- `v2`: DB-backed persistence with compatible rendered views
-- `fts`: only meaningful on top of `v2`
+- `v2`: structured memory consolidation writes `raw_events + canonical_memories`, then re-renders compatible `MEMORY.md` / `HISTORY.md` and injects prompt memory via core memory plus FTS retrieval
 
 `vec` and `hybrid` should not be configured yet because they are not implemented in the current codebase.

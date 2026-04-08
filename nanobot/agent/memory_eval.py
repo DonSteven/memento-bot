@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,6 +13,7 @@ from unittest.mock import patch
 
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.memory import MemoryConsolidator, MemoryStore
+from nanobot.agent.memory_db import parse_memory_markdown
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from nanobot.session.manager import Session, SessionManager
 
@@ -19,15 +21,10 @@ REPORT_VERSION = 1
 
 _FIXTURE_PATHS = {
     "phase0_boundary": Path("nanobot/tests/phase_0/fixtures/memory/phase0_boundary.json"),
-    "shadow_payload": Path("nanobot/tests/phase_2/fixtures/memory/shadow_payload.json"),
     "v2_payload": Path("nanobot/tests/phase_3/fixtures/memory/v2_payload.json"),
 }
 
-"""
-phase0：代表边界选择场景：pick_consolidation_boundary() , token_map把每条信息映射成固定token数，避免不稳定
-shadow：代表phase2的shadow sidecar场景，模拟的是：用户消息进来后，系统一边继续维护用户可见的 MEMORY.md/HISTORY.md，另一方面把结构化记忆写到 shadow sidecar
-v2_payload：代表 Phase 3 的 “v2 persistence” 场景，重点是“真正写入 v2 DB 后，渲染结果和数据库内容是否正确”。
-"""
+"""Embedded fallback fixtures for the offline replay runner."""
 _DEFAULT_FIXTURES: dict[str, dict[str, Any]] = {
     "phase0_boundary": {
         "name": "phase0_legacy_boundary",
@@ -48,39 +45,6 @@ _DEFAULT_FIXTURES: dict[str, dict[str, Any]] = {
             "archived_contents": ["u1", "a1", "u2", "a2"],
         },
     },
-    "shadow_payload": {
-        "messages": [
-            {
-                "role": "user",
-                "content": "I work on Linux and prefer concise answers.",
-                "timestamp": "2026-04-01T09:00:00",
-            },
-            {
-                "role": "assistant",
-                "content": "Understood.",
-                "timestamp": "2026-04-01T09:00:01",
-            },
-        ],
-        "tool_arguments": {
-            "history_entry": "[2026-04-01 09:00] User works on Linux and prefers concise answers.",
-            "canonical_memories": [
-                {
-                    "main_class": "personal_profile",
-                    "sub_class": "environment",
-                    "text": "User works on Linux.",
-                    "confidence": 0.88,
-                },
-                {
-                    "main_class": "preferences",
-                    "sub_class": "reply_style",
-                    "text": "User prefers concise answers.",
-                    "confidence": 0.93,
-                },
-            ],
-        },
-        "expected_memory_markdown": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## Personal Profile\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Constraints\n\n(Rules, boundaries, and requirements that must be respected)\n\n## Projects\n\n(Information about ongoing learning and work projects)\n\n## Daily Life\n\n(Daily routines, interests, and hobbies)\n\n## Plans and Commitments\n\n(Future plans, commitments, deadlines, and to-dos)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*",
-        "expected_history_markdown": "[2026-04-01 09:00] User works on Linux and prefers concise answers.",
-    },
     "v2_payload": {
         "messages": [
             {
@@ -96,10 +60,29 @@ _DEFAULT_FIXTURES: dict[str, dict[str, Any]] = {
         ],
         "tool_arguments": {
             "history_entry": "[2026-04-01 11:00] User works on Linux, prefers concise answers, and the active project is nanobot.",
-            "memory_update": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## Personal Profile\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Constraints\n\n(Rules, boundaries, and requirements that must be respected)\n\n## Projects\n\n- active_project: The active project is nanobot.\n\n## Daily Life\n\n(Daily routines, interests, and hobbies)\n\n## Plans and Commitments\n\n(Future plans, commitments, deadlines, and to-dos)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*",
+            "canonical_memories": [
+                {
+                    "main_class": "personal_profile",
+                    "sub_class": "environment",
+                    "text": "User works on Linux.",
+                    "status": "active",
+                },
+                {
+                    "main_class": "preferences",
+                    "sub_class": "reply_style",
+                    "text": "User prefers concise answers.",
+                    "status": "active",
+                },
+                {
+                    "main_class": "projects",
+                    "sub_class": "active_project",
+                    "text": "The active project is nanobot.",
+                    "status": "active",
+                },
+            ],
         },
         "expected_memory_markdown": "# Long-term Memory\n\nThis file stores important information that should persist across sessions.\n\n## Personal Profile\n\n- environment: User works on Linux.\n\n## Preferences\n\n- reply_style: User prefers concise answers.\n\n## Constraints\n\n(Rules, boundaries, and requirements that must be respected)\n\n## Projects\n\n- active_project: The active project is nanobot.\n\n## Daily Life\n\n(Daily routines, interests, and hobbies)\n\n## Plans and Commitments\n\n(Future plans, commitments, deadlines, and to-dos)\n\n---\n\n*This file is automatically updated by nanobot when important information should be remembered.*",
-        "expected_history_markdown": "[2026-04-01 11:00] User works on Linux, prefers concise answers, and the active project is nanobot.",
+        "expected_history_markdown": "[2026-04-01 11:00] User works on Linux, prefers concise answers, and the active project is nanobot.\n\n",
         "expected": {
             "main_classes": ["personal_profile", "preferences", "projects"],
             "sub_classes": ["environment", "reply_style", "active_project"],
@@ -118,7 +101,7 @@ class ReplayResult:
     """One replay scenario result."""
 
     mode: str # 属于哪个模式
-    scenario: str # 哪种回放场景，e.g., "boundary_replay", "legacy_consolidation_replay", "shadow_sidecar_replay", "v2_persistence_replay", "fts_retrieval_replay", "vec_retrieval_replay", "hybrid_retrieval_replay"
+    scenario: str # 哪种回放场景，e.g., "boundary_replay", "legacy_consolidation_replay", "v2_persistence_replay", "v2_retrieval_replay", "vec_retrieval_replay", "hybrid_retrieval_replay"
     status: str # e.g., "passed", "failed", "not_implemented"
     checks: dict[str, bool] = field(default_factory=dict) # 具体检查项的结果，key是检查项名称，value是是否通过
     details: dict[str, Any] = field(default_factory=dict)
@@ -231,13 +214,19 @@ async def _run_legacy_replay(fixture: dict[str, Any]) -> ReplayResult:
     with TemporaryDirectory(prefix="nanobot-memory-legacy-") as tmp:
         workspace = Path(tmp)
         store = MemoryStore(workspace, mode="legacy")
+        tool_arguments = fixture["tool_arguments"]
+        if "memory_update" not in tool_arguments:
+            tool_arguments = {
+                "history_entry": tool_arguments["history_entry"],
+                "memory_update": fixture["expected_memory_markdown"],
+            }
         provider = _ScriptedProvider([
-            _tool_response("save_memory", "legacy_call_1", fixture["tool_arguments"]),
+            _tool_response("save_memory", "legacy_call_1", tool_arguments),
         ])
 
         result = await store.consolidate(fixture["messages"], provider, "test-model")
         memory_text = store.memory_file.read_text(encoding="utf-8")
-        history_text = store.history_file.read_text(encoding="utf-8").strip()
+        history_text = store.history_file.read_text(encoding="utf-8")
         checks = {
             "consolidate_returned_true": result is True,
             "memory_view_matches": memory_text == fixture["expected_memory_markdown"],
@@ -256,69 +245,25 @@ async def _run_legacy_replay(fixture: dict[str, Any]) -> ReplayResult:
         )
 
 
-async def _run_shadow_replay(fixture: dict[str, Any]) -> ReplayResult:
-    with TemporaryDirectory(prefix="nanobot-memory-shadow-") as tmp:
-        workspace = Path(tmp)
-        store = MemoryStore(workspace, mode="shadow")
-        provider = _ScriptedProvider([
-            _tool_response(
-                "save_memory",
-                "shadow_legacy_call_1",
-                {
-                    "history_entry": fixture["tool_arguments"]["history_entry"],
-                    "memory_update": fixture["expected_memory_markdown"],
-                },
-            ),
-            _tool_response("save_memory_shadow", "shadow_call_1", fixture["tool_arguments"]),
-        ])
-
-        result = await store.consolidate(fixture["messages"], provider, "test-model")
-        shadow_dir = workspace / "memory" / "shadow"
-        memory_text = store.memory_file.read_text(encoding="utf-8")
-        history_text = store.history_file.read_text(encoding="utf-8").strip()
-        checks = {
-            "consolidate_returned_true": result is True,
-            "memory_view_matches": memory_text == fixture["expected_memory_markdown"],
-            "history_view_matches": history_text == fixture["expected_history_markdown"],
-            "shadow_memory_exists": (shadow_dir / "MEMORY.md").exists(),
-            "shadow_history_exists": (shadow_dir / "HISTORY.md").exists(),
-            "shadow_debug_exists": (shadow_dir / "last_payload.json").exists(),
-        }
-        debug_payload = json.loads((shadow_dir / "last_payload.json").read_text(encoding="utf-8"))
-        return ReplayResult(
-            mode="shadow",
-            scenario="shadow_snapshot_replay",
-            status=_status_for(checks),
-            checks=checks,
-            details={
-                "message_count": len(fixture["messages"]),
-                "canonical_count": len(fixture["tool_arguments"]["canonical_memories"]),
-                "debug_history_entry": debug_payload.get("history_entry"),
-            },
-        )
-
-
 async def _run_v2_replay(fixture: dict[str, Any]) -> ReplayResult:
     with TemporaryDirectory(prefix="nanobot-memory-v2-") as tmp:
         workspace = Path(tmp)
         store = MemoryStore(workspace, mode="v2")
         provider = _ScriptedProvider([
-            _tool_response("save_memory", "v2_call_1", fixture["tool_arguments"]),
+            _tool_response("save_memory_structured", "v2_call_1", fixture["tool_arguments"]),
         ])
 
         result = await store.consolidate(fixture["messages"], provider, "test-model")
         assert store.v2_db is not None
         memory_text = store.memory_file.read_text(encoding="utf-8")
-        history_text = store.history_file.read_text(encoding="utf-8").strip()
+        history_text = store.history_file.read_text(encoding="utf-8")
         canonical = store.v2_db.list_canonical_memories()
-        evidence = store.v2_db.list_evidence_links()
         checks = {
             "consolidate_returned_true": result is True,
             "db_exists": store.v2_db.db_path.exists(),
             "memory_view_matches": memory_text == fixture["expected_memory_markdown"],
             "history_view_matches": history_text == fixture["expected_history_markdown"],
             "canonical_texts_match": [item["text"] for item in canonical] == fixture["expected"]["texts"],
-            "evidence_count_matches": len(evidence) == len(canonical),
         }
         return ReplayResult(
             mode="v2",
@@ -328,21 +273,20 @@ async def _run_v2_replay(fixture: dict[str, Any]) -> ReplayResult:
             details={
                 "message_count": len(fixture["messages"]),
                 "canonical_count": len(canonical),
-                "evidence_count": len(evidence),
             },
         )
 
 
-async def _run_fts_replay(fixture: dict[str, Any]) -> ReplayResult:
-    with TemporaryDirectory(prefix="nanobot-memory-fts-") as tmp:
+async def _run_v2_retrieval_replay(fixture: dict[str, Any]) -> ReplayResult:
+    with TemporaryDirectory(prefix="nanobot-memory-v2-retrieval-") as tmp:
         workspace = Path(tmp)
         store = MemoryStore(workspace, mode="v2")
         provider = _ScriptedProvider([
-            _tool_response("save_memory", "fts_seed_call_1", fixture["tool_arguments"]),
+            _tool_response("save_memory_structured", "v2_retrieval_seed_call_1", fixture["tool_arguments"]),
         ])
 
         await store.consolidate(fixture["messages"], provider, "test-model")
-        builder = ContextBuilder(workspace, memory_mode="v2", retrieval_mode="fts")
+        builder = ContextBuilder(workspace, memory_mode="v2")
         query = "Please answer concisely."
         messages = builder.build_messages(history=[], current_message=query)
         system_prompt = messages[0]["content"]
@@ -354,14 +298,14 @@ async def _run_fts_replay(fixture: dict[str, Any]) -> ReplayResult:
             "unrelated_project_not_injected": "The active project is nanobot." not in system_prompt,
         }
         return ReplayResult(
-            mode="fts",
-            scenario="fts_retrieval_replay",
+            mode="v2",
+            scenario="v2_retrieval_replay",
             status=_status_for(checks),
             checks=checks,
             details={
                 "query": query,
                 "prompt_contains_memory": "# Memory" in system_prompt,
-                "retrieval_mode": "fts",
+                "prompt_strategy": "core_plus_fts",
             },
         )
 
@@ -411,17 +355,14 @@ def _build_mode_summary(results: list[ReplayResult]) -> dict[str, dict[str, Any]
 
 async def _run_phase6_ablation_async(fixtures_root: Path | None = None) -> dict[str, Any]:
     phase0 = load_phase_fixture("phase0_boundary", fixtures_root)
-    shadow = load_phase_fixture("shadow_payload", fixtures_root)
     v2 = load_phase_fixture("v2_payload", fixtures_root)
 
     results = [
         _run_boundary_replay("legacy", phase0),
-        _run_boundary_replay("shadow", phase0),
         _run_boundary_replay("v2", phase0),
         await _run_legacy_replay(v2),
-        await _run_shadow_replay(shadow),
         await _run_v2_replay(v2),
-        await _run_fts_replay(v2),
+        await _run_v2_retrieval_replay(v2),
         _not_implemented_result("vec"),
         _not_implemented_result("hybrid"),
     ]
@@ -458,7 +399,7 @@ def render_phase6_report_markdown(report: dict[str, Any]) -> str:
         "| Mode | Status | Passed | Failed | Not Implemented |",
         "| --- | --- | ---: | ---: | ---: |",
     ]
-    for mode in ("legacy", "shadow", "v2", "fts", "vec", "hybrid"):
+    for mode in ("legacy", "v2", "vec", "hybrid"):
         item = report["mode_summary"].get(mode, {})
         lines.append(
             f"| {mode} | {item.get('status', 'n/a')} | {item.get('passed', 0)} | "
@@ -498,3 +439,12 @@ def save_phase6_report(report: dict[str, Any], save_dir: Path) -> dict[str, Path
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     markdown_path.write_text(render_phase6_report_markdown(report), encoding="utf-8")
     return {"json": json_path, "markdown": markdown_path}
+
+
+# ============================================================================
+# Memory Extraction Evaluation
+# ============================================================================
+
+MemoryProviderFactory = Callable[[dict[str, Any]], LLMProvider]
+
+

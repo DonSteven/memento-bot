@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import weakref
 from datetime import datetime
@@ -12,8 +11,8 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
-from nanobot.agent.memory_db import MemoryDatabase, parse_memory_markdown
-from nanobot.agent.memory_pipeline import ShadowMemoryPipeline
+from nanobot.agent.memory_db import MemoryDatabase
+from nanobot.agent.memory_pipeline import StructuredMemoryPipeline
 from nanobot.utils.helpers import ensure_dir, estimate_message_tokens, estimate_prompt_tokens_chain
 
 if TYPE_CHECKING:
@@ -82,8 +81,6 @@ _TOOL_CHOICE_ERROR_MARKERS = (
     'should be ["none", "auto"]',
 )
 
-_FTS_CORE_CLASSES = ("personal_profile", "preferences", "constraints")
-
 """检测 Provider 错误信息中是否包含上述关键词"""
 def _is_tool_choice_unsupported(content: str | None) -> bool:
     """Detect provider errors caused by forced tool_choice being unsupported."""
@@ -102,8 +99,8 @@ class MemoryStore:
         self.memory_file = self.memory_dir / "MEMORY.md"
         self.history_file = self.memory_dir / "HISTORY.md"
         self.mode = mode
-        self.v2_db = MemoryDatabase(workspace) if mode == "v2" else None
-        self.shadow_pipeline = ShadowMemoryPipeline(workspace) if mode == "shadow" else None
+        self.v2_db = MemoryDatabase(workspace) if self.mode == "v2" else None
+        self.v2_pipeline = StructuredMemoryPipeline(workspace) if self.mode == "v2" else None
         self._consecutive_failures = 0
 
     def read_long_term(self) -> str: # 读取 Memory.md 内容
@@ -122,88 +119,10 @@ class MemoryStore:
         long_term = self.read_long_term()
         return f"## Long-term Memory\n{long_term}" if long_term else ""
 
-    @staticmethod
-    def _format_memory_snippets(items: list[dict[str, Any]]) -> list[str]:
-        lines: list[str] = []
-        for item in items:
-            main_class = str(item.get("main_class") or "")
-            sub_class = str(item.get("sub_class") or "").strip()
-            text = str(item.get("text") or "").strip()
-            if not text:
-                continue
-            label = f"{main_class}/{sub_class}" if sub_class else main_class
-            lines.append(f"- [{label}] {text}")
-        return lines
-
-    @staticmethod
-    def _memory_identity(item: dict[str, Any]) -> str:
-        memory_id = str(item.get("memory_id") or "").strip()
-        if memory_id:
-            return memory_id
-        return "|".join([
-            str(item.get("main_class") or "").strip(),
-            str(item.get("sub_class") or "").strip(),
-            str(item.get("text") or "").strip(),
-        ])
-
-    def get_retrieval_context(self, query: str, retrieval_mode: str = "full_view", limit: int = 5) -> str:
-        if retrieval_mode != "fts":
+    def get_prompt_memory(self, current_message: str | None = None, limit: int = 5) -> str:
+        if self.mode != "v2":
             return self.get_memory_context()
-        if self.v2_db is None or not self.v2_db.db_path.exists():
-            return self.get_memory_context()
-
-        core_items = [
-            item
-            for item in self.v2_db.list_canonical_memories()
-            if str(item.get("main_class") or "").strip() in _FTS_CORE_CLASSES
-        ]
-        retrieved_items: list[dict[str, Any]] = []
-        seen = {self._memory_identity(item) for item in core_items}
-        for item in self.v2_db.query_canonical_memories(query, limit=limit):
-            identity = self._memory_identity(item)
-            if identity in seen:
-                continue
-            seen.add(identity)
-            retrieved_items.append(item)
-
-        if not core_items and not retrieved_items:
-            return ""
-
-        lines: list[str] = []
-        core_lines = self._format_memory_snippets(core_items)
-        if core_lines:
-            lines.extend(["## Core Memory", *core_lines])
-        retrieved_lines = self._format_memory_snippets(retrieved_items)
-        if retrieved_lines:
-            if lines:
-                lines.append("")
-            lines.extend(["## Retrieved Memory", *retrieved_lines])
-        return "\n".join(lines)
-
-    def _persist_v2(self, *, entry: str, update: str, messages: list[dict]) -> None:
-        """把一次 LLM 产出的整份 MEMORY.md 更新结果，作为一个新的 v2 快照，完整写入数据库，并重建可读视图"""
-        if self.v2_db is None:
-            raise RuntimeError("v2 database is not initialized")
-
-        timestamp = datetime.now().isoformat(timespec="seconds")
-        event_id = f"v2_evt_{hashlib.sha1(f'{entry}|{timestamp}'.encode('utf-8')).hexdigest()[:12]}"
-        canonical_memories = parse_memory_markdown(update)
-        extracted = {
-            "memory_update": update,
-            "message_count": len(messages),
-        }
-
-        self.v2_db.insert_raw_event(
-            event_id=event_id,
-            ts=timestamp,
-            session_key="v2",
-            history_text=entry,
-            plain_text=self._format_messages(messages),
-            extracted=extracted,
-            candidate_type="v2_snapshot",
-        )
-        self.v2_db.replace_canonical_snapshot(canonical_memories, event_id=event_id)
-        self.v2_db.write_views()
+        return self.v2_pipeline.build_retrieval_context(current_message or "", limit=limit)
 
     # 把一组消息 messages 格式化成一段纯文本，供后面的 memory consolidation prompt 使用。
     @staticmethod
@@ -236,6 +155,10 @@ class MemoryStore:
         """Consolidate the provided message chunk into MEMORY.md + HISTORY.md."""
         if not messages:
             return True
+        if self.mode == "v2":
+            if self.v2_pipeline is None:
+                raise RuntimeError("v2 structured pipeline is not initialized")
+            return await self.v2_pipeline.ingest_chunk(messages, provider, model)
 
         current_memory = self.read_long_term()
         prompt = f"""
@@ -308,26 +231,9 @@ class MemoryStore:
                 return self._fail_or_raw_archive(messages)
 
             update = _ensure_text(update)
-            if self.mode == "v2":
-                try:
-                    self._persist_v2(entry=entry, update=update, messages=messages)
-                except Exception:
-                    logger.exception("V2 memory persistence failed, falling back to legacy file writes")
-                    self.append_history(entry)
-                    if update != current_memory:
-                        self.write_long_term(update)
-            else:
-                self.append_history(entry)
-                if update != current_memory:
-                    self.write_long_term(update)
-
-            if self.shadow_pipeline is not None:
-                try:
-                    shadow_ok = await self.shadow_pipeline.ingest_chunk(messages, provider, model)
-                    if not shadow_ok:
-                        logger.warning("Shadow memory pipeline returned no structured write for this chunk")
-                except Exception:
-                    logger.exception("Shadow memory pipeline failed after legacy consolidation")
+            self.append_history(entry)
+            if update != current_memory:
+                self.write_long_term(update)
 
             self._consecutive_failures = 0
             logger.info("Memory consolidation done for {} messages", len(messages))

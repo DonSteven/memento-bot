@@ -1,4 +1,4 @@
-"""Shadow memory pipeline for structured sidecar snapshots."""
+"""Structured memory pipeline for the DB-backed v2 memory path."""
 
 from __future__ import annotations
 
@@ -10,19 +10,18 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from nanobot.agent.memory_db import MemoryDatabase, _canonical_memory_id
-from nanobot.utils.helpers import ensure_dir
+from nanobot.agent.memory_db import MEMORY_STATUSES, MemoryDatabase, _canonical_memory_id
 
 if TYPE_CHECKING:
     from nanobot.providers.base import LLMProvider
 
 
-_SAVE_MEMORY_SHADOW_TOOL = [
+_SAVE_MEMORY_STRUCTURED_TOOL = [
     {
         "type": "function",
         "function": {
-            "name": "save_memory_shadow",
-            "description": "Save the shadow memory consolidation result to structured storage.",
+            "name": "save_memory_structured",
+            "description": "Save the memory consolidation result to persistent structured storage.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -51,9 +50,9 @@ _SAVE_MEMORY_SHADOW_TOOL = [
                                 },
                                 "sub_class": {"type": "string"},
                                 "text": {"type": "string"},
-                                "confidence": {"type": "number"},
+                                "status": {"type": "string", "enum": list(MEMORY_STATUSES)},
                             },
-                            "required": ["main_class", "text"],
+                            "required": ["main_class", "text", "status"],
                         },
                     },
                 },
@@ -63,20 +62,6 @@ _SAVE_MEMORY_SHADOW_TOOL = [
     }
 ]
 
-
-def _ensure_text(value: Any) -> str:
-    """Normalize tool-call payload values to text for storage and comparison."""
-    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
-
-
-def _normalize_shadow_args(args: Any) -> dict[str, Any] | None:
-    if isinstance(args, str):
-        args = json.loads(args)
-    if isinstance(args, list):
-        return args[0] if args and isinstance(args[0], dict) else None
-    return args if isinstance(args, dict) else None
-
-
 _TOOL_CHOICE_ERROR_MARKERS = (
     "tool_choice",
     "toolchoice",
@@ -84,27 +69,98 @@ _TOOL_CHOICE_ERROR_MARKERS = (
     'should be ["none", "auto"]',
 )
 
+_FTS_CORE_CLASSES = ("personal_profile", "preferences", "constraints")
+
+
+def _ensure_text(value: Any) -> str:
+    """Normalize tool-call payload values to text for storage and comparison."""
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
+def _normalize_structured_args(args: Any) -> dict[str, Any] | None:
+    if isinstance(args, str):
+        args = json.loads(args)
+    if isinstance(args, list):
+        return args[0] if args and isinstance(args[0], dict) else None
+    return args if isinstance(args, dict) else None
+
 
 def _is_tool_choice_unsupported(content: str | None) -> bool:
     text = (content or "").lower()
     return any(marker in text for marker in _TOOL_CHOICE_ERROR_MARKERS)
 
 
-class ShadowMemoryPipeline:
-    """Best-effort sidecar pipeline that writes structured shadow memory snapshots."""
+class StructuredMemoryPipeline:
+    """DB-backed structured memory consolidation for v2."""
 
     _MAX_FAILURES_BEFORE_RAW_ARCHIVE = 3
+    _SESSION_KEY = "v2"
+    _SNAPSHOT_CANDIDATE_TYPE = "v2_snapshot"
+    _RAW_ARCHIVE_CANDIDATE_TYPE = "v2_raw_archive"
 
     def __init__(self, workspace: Path):
         self.workspace = workspace
-        self.shadow_dir = ensure_dir(workspace / "memory" / "shadow")
-        self.db = MemoryDatabase(
-            workspace,
-            storage_dir=self.shadow_dir,
-            view_dir=self.shadow_dir,
-        )
-        self.debug_file = self.shadow_dir / "last_payload.json"
+        self.db = MemoryDatabase(workspace)
+        self.debug_file = self.db.memory_dir / "last_payload.json"
         self._consecutive_failures = 0
+
+    @staticmethod
+    def _format_memory_snippets(items: list[dict[str, Any]]) -> list[str]:
+        lines: list[str] = []
+        for item in items:
+            main_class = str(item.get("main_class") or "")
+            sub_class = str(item.get("sub_class") or "").strip()
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            label = f"{main_class}/{sub_class}" if sub_class else main_class
+            lines.append(f"- [{label}] {text}")
+        return lines
+
+    @staticmethod
+    def _memory_identity(item: dict[str, Any]) -> str:
+        memory_id = str(item.get("memory_id") or "").strip()
+        if memory_id:
+            return memory_id
+        return "|".join([
+            str(item.get("main_class") or "").strip(),
+            str(item.get("sub_class") or "").strip(),
+            str(item.get("text") or "").strip(),
+        ])
+
+    def build_retrieval_context(self, query: str, limit: int = 5) -> str:
+        """ 把始终应该带上的核心记忆 和 和当前 query 相关的检索记忆 组合成一段可直接塞进 prompt 的上下文字符串。"""
+        if not self.db.db_path.exists():
+            return ""
+
+        core_items = [
+            item
+            for item in self.db.list_canonical_memories(active_only=True)
+            if str(item.get("main_class") or "").strip() in _FTS_CORE_CLASSES
+        ]
+        retrieved_items: list[dict[str, Any]] = []
+        seen = {self._memory_identity(item) for item in core_items}
+        if query.strip():
+            for item in self.db.query_canonical_memories(query, limit=limit):
+                identity = self._memory_identity(item)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                retrieved_items.append(item)
+
+        if not core_items and not retrieved_items:
+            return ""
+
+        lines: list[str] = []
+        core_lines = self._format_memory_snippets(core_items)
+        if core_lines:
+            lines.extend(["## Core Memory", *core_lines])
+        retrieved_lines = self._format_memory_snippets(retrieved_items)
+        if retrieved_lines:
+            if lines:
+                lines.append("")
+            lines.extend(["## Retrieved Memory", *retrieved_lines])
+        return "\n".join(lines)
 
     @staticmethod
     def _format_messages(messages: list[dict[str, Any]]) -> str:
@@ -118,6 +174,13 @@ class ShadowMemoryPipeline:
             )
         return "\n".join(lines)
 
+    def _current_memory_view(self) -> str:
+        if self.db.memory_file.exists():
+            return self.db.memory_file.read_text(encoding="utf-8")
+        if self.db.db_path.exists():
+            return self.db.render_memory_view()
+        return "(empty)"
+
     def _write_debug_payload(self, payload: dict[str, Any]) -> None:
         self.debug_file.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
@@ -126,17 +189,18 @@ class ShadowMemoryPipeline:
 
     @staticmethod
     def _normalize_snapshot_memories(items: list[Any]) -> list[dict[str, Any]]:
-        """Normalize the structured snapshot and ensure each memory gets a stable unique id."""
+        """Normalize the structured snapshot and ensure each memory gets a unique id."""
         normalized: dict[str, dict[str, Any]] = {}
 
         for item in items:
             if not isinstance(item, dict):
-                continue
+                return []
 
             main_class = str(item.get("main_class") or "").strip()
             text = _ensure_text(item.get("text", "")).strip()
-            if not main_class or not text:
-                continue
+            status = str(item.get("status") or "").strip()
+            if not main_class or not text or status not in MEMORY_STATUSES:
+                return []
 
             sub_class = _ensure_text(item.get("sub_class", "")).strip()
             memory_id = _canonical_memory_id(main_class, sub_class, text)
@@ -145,13 +209,12 @@ class ShadowMemoryPipeline:
                 "main_class": main_class,
                 "sub_class": sub_class,
                 "text": text,
-                "confidence": float(item.get("confidence", 0.0) or 0.0),
+                "status": status,
             }
 
         return list(normalized.values())
 
     def _fail_or_raw_archive(self, messages: list[dict[str, Any]]) -> bool:
-        """Mirror legacy failure handling for the sidecar path."""
         self._consecutive_failures += 1
         if self._consecutive_failures < self._MAX_FAILURES_BEFORE_RAW_ARCHIVE:
             return False
@@ -160,7 +223,6 @@ class ShadowMemoryPipeline:
         return True
 
     def _raw_archive(self, messages: list[dict[str, Any]]) -> None:
-        """Fallback: persist the raw chunk into shadow raw_events without updating snapshot memory."""
         self.db.initialize()
         ts = datetime.now()
         plain_text = self._format_messages(messages)
@@ -168,19 +230,22 @@ class ShadowMemoryPipeline:
             f"[{ts.strftime('%Y-%m-%d %H:%M')}] [RAW] {len(messages)} messages\n"
             f"{plain_text}"
         )
-        event_id = f"shadow_raw_{hashlib.sha1(f'{history_entry}|{ts.isoformat()}'.encode('utf-8')).hexdigest()[:12]}"
+        event_id = (
+            f"{self._SESSION_KEY}_raw_"
+            f"{hashlib.sha1(f'{history_entry}|{ts.isoformat()}'.encode('utf-8')).hexdigest()[:12]}"
+        )
         self.db.insert_raw_event(
             event_id=event_id,
             ts=ts.isoformat(timespec="seconds"),
-            session_key="shadow",
+            session_key=self._SESSION_KEY,
             history_text=history_entry,
             plain_text=plain_text,
             extracted={"raw_archive": True, "message_count": len(messages)},
-            candidate_type="shadow_raw_archive",
+            candidate_type=self._RAW_ARCHIVE_CANDIDATE_TYPE,
         )
         self.db.write_views()
         logger.warning(
-            "Shadow memory consolidation degraded: raw-archived {} messages",
+            "Structured memory consolidation degraded: raw-archived {} messages",
             len(messages),
         )
 
@@ -193,12 +258,11 @@ class ShadowMemoryPipeline:
         if not messages:
             return True
 
-        current_shadow_memory = self.db.render_memory_view() if self.db.db_path.exists() else "(empty)"
         prompt = f"""
-                Process this conversation and call the save_memory_shadow tool with your consolidation.
-
+                Process this conversation and call the save_memory_structured tool with your consolidation.
+                
                 ## Current Long-term Memory
-                {current_shadow_memory}
+                {self._current_memory_view()}
 
                 ## Conversation to Process
                 {self._format_messages(messages)}
@@ -207,32 +271,32 @@ class ShadowMemoryPipeline:
         chat_messages = [
             {
                 "role": "system",
-                "content": "You are a memory consolidation agent. Call the save_memory_shadow tool with your consolidation of the conversation.",
+                "content": "You are a memory consolidation agent. Call the save_memory_structured tool with your consolidation of the conversation.",
             },
             {"role": "user", "content": prompt},
         ]
 
         try:
-            forced = {"type": "function", "function": {"name": "save_memory_shadow"}}
+            forced = {"type": "function", "function": {"name": "save_memory_structured"}}
             response = await provider.chat_with_retry(
                 messages=chat_messages,
-                tools=_SAVE_MEMORY_SHADOW_TOOL,
+                tools=_SAVE_MEMORY_STRUCTURED_TOOL,
                 model=model,
                 tool_choice=forced,
             )
 
             if response.finish_reason == "error" and _is_tool_choice_unsupported(response.content):
-                logger.warning("Forced tool_choice unsupported in shadow mode, retrying with auto")
+                logger.warning("Forced tool_choice unsupported in v2 mode, retrying with auto")
                 response = await provider.chat_with_retry(
                     messages=chat_messages,
-                    tools=_SAVE_MEMORY_SHADOW_TOOL,
+                    tools=_SAVE_MEMORY_STRUCTURED_TOOL,
                     model=model,
                     tool_choice="auto",
                 )
 
             if not response.has_tool_calls:
                 logger.warning(
-                    "Shadow memory consolidation: LLM did not call save_memory_shadow "
+                    "Structured memory consolidation: LLM did not call save_memory_structured "
                     "(finish_reason={}, content_len={}, content_preview={})",
                     response.finish_reason,
                     len(response.content or ""),
@@ -240,25 +304,23 @@ class ShadowMemoryPipeline:
                 )
                 return self._fail_or_raw_archive(messages)
 
-            args = _normalize_shadow_args(response.tool_calls[0].arguments)
+            args = _normalize_structured_args(response.tool_calls[0].arguments)
             if args is None:
-                logger.warning("Shadow memory consolidation: unexpected save_memory_shadow arguments")
+                logger.warning("Structured memory consolidation: unexpected save_memory_structured arguments")
                 return self._fail_or_raw_archive(messages)
-            
             if "history_entry" not in args or "canonical_memories" not in args:
-                logger.warning("Shadow memory consolidation: payload missing required fields")
+                logger.warning("Structured memory consolidation: payload missing required fields")
                 return self._fail_or_raw_archive(messages)
 
             history_entry = _ensure_text(args["history_entry"]).strip()
             canonical_memories = args["canonical_memories"]
-            
             if not history_entry or not isinstance(canonical_memories, list):
-                logger.warning("Shadow memory consolidation: payload contains invalid required fields")
+                logger.warning("Structured memory consolidation: payload contains invalid required fields")
                 return self._fail_or_raw_archive(messages)
 
             normalized_snapshot = self._normalize_snapshot_memories(canonical_memories)
             if canonical_memories and not normalized_snapshot:
-                logger.warning("Shadow memory consolidation: no valid canonical memories after normalization")
+                logger.warning("Structured memory consolidation: no valid canonical memories after normalization")
                 return self._fail_or_raw_archive(messages)
 
             payload = {
@@ -267,24 +329,25 @@ class ShadowMemoryPipeline:
                 "message_count": len(messages),
             }
             self._write_debug_payload(payload)
-            self.db.initialize()
 
             now = datetime.now().isoformat(timespec="seconds")
-            event_id = f"shadow_evt_{hashlib.sha1(f'{history_entry}|{now}'.encode('utf-8')).hexdigest()[:12]}"
-            self.db.insert_raw_event(
+            event_id = (
+                f"{self._SESSION_KEY}_evt_"
+                f"{hashlib.sha1(f'{history_entry}|{now}'.encode('utf-8')).hexdigest()[:12]}"
+            )
+            self.db.write_structured_snapshot(
                 event_id=event_id,
                 ts=now,
-                session_key="shadow",
+                session_key=self._SESSION_KEY,
                 history_text=history_entry,
                 plain_text=self._format_messages(messages),
                 extracted=payload,
-                candidate_type="shadow_chunk",
+                candidate_type=self._SNAPSHOT_CANDIDATE_TYPE,
+                memories=normalized_snapshot,
             )
-            self.db.replace_canonical_snapshot(normalized_snapshot, event_id=event_id)
-            self.db.write_views()
             self._consecutive_failures = 0
-            logger.info("Shadow memory consolidation done for {} messages", len(messages))
+            logger.info("Structured memory consolidation done for {} messages", len(messages))
             return True
         except Exception:
-            logger.exception("Shadow memory consolidation failed")
+            logger.exception("Structured memory consolidation failed")
             return self._fail_or_raw_archive(messages)

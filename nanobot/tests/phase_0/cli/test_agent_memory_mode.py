@@ -23,7 +23,7 @@ runner = CliRunner()
 def test_agent_passes_memory_mode_to_loop(tmp_path: Path) -> None:
     config = Config()
     config.agents.defaults.workspace = str(tmp_path / "default-workspace")
-    config.memory.mode = "shadow"
+    config.memory.mode = "v2"
 
     with patch("nanobot.config.loader.load_config", return_value=config), \
          patch("nanobot.cli.commands.sync_workspace_templates"), \
@@ -44,4 +44,4 @@ def test_agent_passes_memory_mode_to_loop(tmp_path: Path) -> None:
         result = runner.invoke(app, ["agent", "-m", "hello"])
 
     assert result.exit_code == 0
-    assert mock_agent_loop_cls.call_args.kwargs["memory_mode"] == "shadow"
+    assert mock_agent_loop_cls.call_args.kwargs["memory_mode"] == "v2"

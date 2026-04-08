@@ -22,18 +22,17 @@ def test_run_phase6_ablation_returns_fixed_format_report() -> None:
 
     assert report["report_version"] == 1
     assert report["summary"] == {
-        "passed": 7,
+        "passed": 5,
         "failed": 0,
         "not_implemented": 2,
-        "total": 9,
+        "total": 7,
     }
     assert report["mode_summary"]["legacy"]["status"] == "passed"
-    assert report["mode_summary"]["shadow"]["status"] == "passed"
     assert report["mode_summary"]["v2"]["status"] == "passed"
-    assert report["mode_summary"]["fts"]["status"] == "passed"
+    assert "fts" not in report["mode_summary"]
     assert report["mode_summary"]["vec"]["status"] == "not_implemented"
     assert report["mode_summary"]["hybrid"]["status"] == "not_implemented"
-    assert len(report["results"]) == 9
+    assert len(report["results"]) == 7
 
 
 def test_render_phase6_report_markdown_contains_fixed_sections() -> None:
@@ -45,7 +44,10 @@ def test_render_phase6_report_markdown_contains_fixed_sections() -> None:
     assert "## Mode Summary" in rendered
     assert "## Scenario Results" in rendered
     assert "| legacy | passed |" in rendered
-    assert "shadow_snapshot_replay" in rendered
+    assert "| v2 | passed |" in rendered
+    assert "v2_persistence_replay" in rendered
+    assert "v2_retrieval_replay" in rendered
+    assert "| fts |" not in rendered
     assert "| vec | not_implemented |" in rendered
 
 

@@ -24,12 +24,10 @@ class ContextBuilder:
         workspace: Path,
         timezone: str | None = None,
         memory_mode: str = "legacy",
-        retrieval_mode: str = "full_view",
     ):
         self.workspace = workspace
         self.timezone = timezone
         self.memory = MemoryStore(workspace, mode=memory_mode)
-        self.retrieval_mode = retrieval_mode
         self.skills = SkillsLoader(workspace)
 
     def build_system_prompt(
@@ -44,13 +42,7 @@ class ContextBuilder:
         if bootstrap:
             parts.append(bootstrap)
 
-        if self.retrieval_mode == "fts" and current_message:
-            memory = self.memory.get_retrieval_context(
-                current_message,
-                retrieval_mode=self.retrieval_mode,
-            )
-        else:
-            memory = self.memory.get_memory_context() # 获取 Memory.md 全文
+        memory = self.memory.get_prompt_memory(current_message=current_message) # 获取 Memory.md 全文
         if memory:
             parts.append(f"# Memory\n\n{memory}")
 

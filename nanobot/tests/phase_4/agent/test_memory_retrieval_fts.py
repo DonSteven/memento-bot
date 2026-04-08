@@ -1,6 +1,6 @@
 # Phase 4 test content:
-# - verifies canonical memories are queryable through SQLite FTS5
-# - verifies FTS returns only relevant canonical memories and respects empty-query behavior
+# - verifies v2 canonical memories are queryable through SQLite FTS5
+# - verifies retrieval returns only relevant canonical memories and respects empty-query behavior
 # - verifies retrieval results still expose the simplified canonical snapshot fields
 # How to test:
 # - run this file directly with:
@@ -18,12 +18,14 @@ def test_query_canonical_memories_returns_relevant_matches(tmp_path) -> None:
         main_class="preferences",
         sub_class="reply_style",
         text="User prefers concise answers.",
+        status="active",
     )
     db.upsert_canonical_memory(
         memory_id="mem_project",
         main_class="projects",
         sub_class="active_project",
         text="The active project is nanobot.",
+        status="active",
     )
 
     results = db.query_canonical_memories("concise answers", limit=5)
@@ -40,6 +42,7 @@ def test_query_canonical_memories_empty_query_returns_no_matches(tmp_path) -> No
         main_class="preferences",
         sub_class="reply_style",
         text="User prefers concise answers.",
+        status="active",
     )
 
     assert db.query_canonical_memories("   ", limit=5) == []
@@ -52,6 +55,7 @@ def test_query_canonical_memories_handles_simple_word_variants(tmp_path) -> None
         main_class="preferences",
         sub_class="reply_style",
         text="User prefers concise answers.",
+        status="active",
     )
 
     results = db.query_canonical_memories("Please answer concisely.", limit=5)
@@ -67,7 +71,7 @@ def test_query_canonical_memories_returns_active_snapshot_fields_only(tmp_path) 
         main_class="preferences",
         sub_class="reply_style",
         text="User prefers concise answers.",
-        confidence=0.9,
+        status="active",
     )
 
     results = db.query_canonical_memories("concise answers", limit=5)
@@ -78,5 +82,25 @@ def test_query_canonical_memories_returns_active_snapshot_fields_only(tmp_path) 
         "main_class": "preferences",
         "sub_class": "reply_style",
         "text": "User prefers concise answers.",
-        "confidence": 0.9,
+        "status": "active",
     }
+
+
+def test_query_canonical_memories_skips_non_active_matches(tmp_path) -> None:
+    db = MemoryDatabase(tmp_path)
+    db.upsert_canonical_memory(
+        memory_id="mem_active",
+        main_class="preferences",
+        sub_class="reply_style",
+        text="User prefers concise answers.",
+        status="active",
+    )
+    db.upsert_canonical_memory(
+        memory_id="mem_archived",
+        main_class="preferences",
+        sub_class="reply_style",
+        text="User once preferred verbose answers.",
+        status="archived",
+    )
+
+    assert db.query_canonical_memories("verbose", limit=5) == []

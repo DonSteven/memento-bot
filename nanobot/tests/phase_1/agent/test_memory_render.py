@@ -50,7 +50,7 @@ def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
             main_class=event.get("main_class"),
             sub_class=event.get("sub_class"),
             candidate_type=event.get("candidate_type"),
-            confidence=event.get("confidence", 0.0),
+            status=event.get("status"),
         )
     for memory in fixture["canonical_memories"]:
         db.upsert_canonical_memory(
@@ -58,7 +58,7 @@ def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
             main_class=memory["main_class"],
             sub_class=memory.get("sub_class", ""),
             text=memory["text"],
-            confidence=memory.get("confidence", 0.0),
+            status=memory.get("status", "active"),
         )
 
     db.write_views()
@@ -127,4 +127,4 @@ def test_render_history_markdown_filters_empty_entries_and_keeps_order() -> None
         {"event_id": "evt_1", "ts": "2026-04-01T09:04:00", "history_text": "[2026-04-01 09:04] First."},
     ])
 
-    assert rendered == "[2026-04-01 09:04] First.\n\n[2026-04-01 09:06] Third."
+    assert rendered == "[2026-04-01 09:04] First.\n\n[2026-04-01 09:06] Third.\n\n"

@@ -11,6 +11,9 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+from pydantic import ValidationError
+
 from nanobot.agent.loop import AgentLoop
 from nanobot.bus.queue import MessageBus
 from nanobot.config.schema import Config
@@ -39,23 +42,33 @@ def test_config_defaults_to_legacy_memory_mode() -> None:
     assert config.memory.mode == "legacy"
 
 
+def test_config_rejects_shadow_memory_mode() -> None:
+    with pytest.raises(ValidationError):
+        Config.model_validate({"memory": {"mode": "shadow"}})
+
+
+def test_config_rejects_retrieval_mode() -> None:
+    with pytest.raises(ValidationError):
+        Config.model_validate({"memory": {"mode": "v2", "retrieval_mode": "fts"}})
+
+
 def test_agent_loop_propagates_memory_mode(tmp_path: Path) -> None:
     loop = AgentLoop(
         bus=MessageBus(),
         provider=_make_provider(),
         workspace=tmp_path,
-        memory_mode="shadow",
+        memory_mode="v2",
     )
 
-    assert loop.memory_mode == "shadow"
-    assert loop.memory_consolidator.mode == "shadow"
-    assert loop.memory_consolidator.store.mode == "shadow"
+    assert loop.memory_mode == "v2"
+    assert loop.memory_consolidator.mode == "v2"
+    assert loop.memory_consolidator.store.mode == "v2"
 
 
 def test_nanobot_from_config_passes_memory_mode(tmp_path: Path) -> None:
-    config_path = _write_config(tmp_path, memory_mode="shadow")
+    config_path = _write_config(tmp_path, memory_mode="v2")
 
     bot = Nanobot.from_config(config_path, workspace=tmp_path)
 
-    assert bot._loop.memory_mode == "shadow"
-    assert bot._loop.memory_consolidator.mode == "shadow"
+    assert bot._loop.memory_mode == "v2"
+    assert bot._loop.memory_consolidator.mode == "v2"

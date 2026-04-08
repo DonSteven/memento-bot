@@ -1,9 +1,9 @@
 # Phase 2 test content:
-# - verifies the shadow pipeline writes structured full-snapshot sidecar artifacts into memory/shadow
-# - verifies canonical memories, evidence links, rendered views, and debug payload are all emitted
+# - verifies the structured pipeline writes root memory artifacts into memory/
+# - verifies canonical memories, rendered views, and debug payload are all emitted
 # - verifies repeated replay is stable after ignoring non-deterministic event metadata
 # - verifies snapshot replacement, empty-snapshot clears, and raw-archive fallback preserve correctness
-# - verifies tool_choice retry and invalid snapshot failures follow the new legacy-aligned behavior
+# - verifies tool_choice retry, prompt seeding, and invalid snapshot failures follow the v2 behavior
 # How to test:
 # - run this file directly with:
 #   uv run --extra dev pytest -q nanobot/tests/phase_2/agent/test_memory_shadow_pipeline.py
@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-from nanobot.agent.memory_pipeline import ShadowMemoryPipeline
+from nanobot.agent.memory_pipeline import StructuredMemoryPipeline
 from nanobot.providers.base import LLMResponse, ToolCallRequest
 
 
@@ -36,13 +36,7 @@ def _normalize_raw_events(events: list[dict]) -> list[dict]:
     return normalized
 
 
-def _normalize_evidence_links(links: list[dict], memories: list[dict]) -> list[tuple[str, float]]:
-    memory_ids = {link["memory_id"] for link in links}
-    assert memory_ids.issubset({memory["memory_id"] for memory in memories})
-    return sorted((link["memory_id"], link["weight"]) for link in links)
-
-
-def test_shadow_pipeline_writes_sidecar_artifacts(tmp_path: Path) -> None:
+def test_structured_pipeline_writes_root_artifacts(tmp_path: Path) -> None:
     fixture = _load_fixture("shadow_payload")
     provider = AsyncMock()
     provider.chat_with_retry = AsyncMock(
@@ -50,15 +44,15 @@ def test_shadow_pipeline_writes_sidecar_artifacts(tmp_path: Path) -> None:
             content=None,
             tool_calls=[
                 ToolCallRequest(
-                    id="shadow_call_1",
-                    name="save_memory_shadow",
+                    id="v2_call_1",
+                    name="save_memory_structured",
                     arguments=fixture["tool_arguments"],
                 )
             ],
         )
     )
 
-    pipeline = ShadowMemoryPipeline(tmp_path)
+    pipeline = StructuredMemoryPipeline(tmp_path)
 
     result = __import__("asyncio").run(
         pipeline.ingest_chunk(fixture["messages"], provider, "test-model")
@@ -71,15 +65,15 @@ def test_shadow_pipeline_writes_sidecar_artifacts(tmp_path: Path) -> None:
 
     raw_events = pipeline.db.list_raw_events()
     memories = pipeline.db.list_canonical_memories()
-    evidence = pipeline.db.list_evidence_links()
 
     assert len(raw_events) == 1
+    assert raw_events[0]["candidate_type"] == "v2_snapshot"
     assert len(memories) == 2
-    assert len(evidence) == 2
     assert json.loads(pipeline.debug_file.read_text(encoding="utf-8"))["history_entry"] == fixture["tool_arguments"]["history_entry"]
+    assert not (tmp_path / "memory" / "shadow").exists()
 
 
-def test_shadow_pipeline_replay_is_stable_ignoring_event_metadata(tmp_path: Path) -> None:
+def test_structured_pipeline_replay_is_stable_ignoring_event_metadata(tmp_path: Path) -> None:
     fixture = _load_fixture("shadow_payload")
 
     def _provider():
@@ -89,8 +83,8 @@ def test_shadow_pipeline_replay_is_stable_ignoring_event_metadata(tmp_path: Path
                 content=None,
                 tool_calls=[
                     ToolCallRequest(
-                        id="shadow_call_1",
-                        name="save_memory_shadow",
+                        id="v2_call_1",
+                        name="save_memory_structured",
                         arguments=fixture["tool_arguments"],
                     )
                 ],
@@ -98,8 +92,8 @@ def test_shadow_pipeline_replay_is_stable_ignoring_event_metadata(tmp_path: Path
         )
         return provider
 
-    pipeline_one = ShadowMemoryPipeline(tmp_path / "run_one")
-    pipeline_two = ShadowMemoryPipeline(tmp_path / "run_two")
+    pipeline_one = StructuredMemoryPipeline(tmp_path / "run_one")
+    pipeline_two = StructuredMemoryPipeline(tmp_path / "run_two")
 
     __import__("asyncio").run(pipeline_one.ingest_chunk(fixture["messages"], _provider(), "test-model"))
     __import__("asyncio").run(pipeline_two.ingest_chunk(fixture["messages"], _provider(), "test-model"))
@@ -108,17 +102,158 @@ def test_shadow_pipeline_replay_is_stable_ignoring_event_metadata(tmp_path: Path
     memories_two = pipeline_two.db.list_canonical_memories()
     raw_one = pipeline_one.db.list_raw_events()
     raw_two = pipeline_two.db.list_raw_events()
-    evidence_one = pipeline_one.db.list_evidence_links()
-    evidence_two = pipeline_two.db.list_evidence_links()
 
     assert pipeline_one.db.memory_file.read_text(encoding="utf-8") == pipeline_two.db.memory_file.read_text(encoding="utf-8")
     assert pipeline_one.db.history_file.read_text(encoding="utf-8") == pipeline_two.db.history_file.read_text(encoding="utf-8")
     assert memories_one == memories_two
     assert _normalize_raw_events(raw_one) == _normalize_raw_events(raw_two)
-    assert _normalize_evidence_links(evidence_one, memories_one) == _normalize_evidence_links(evidence_two, memories_two)
 
 
-def test_shadow_pipeline_replaces_full_snapshot_when_memory_changes(tmp_path: Path) -> None:
+def test_structured_pipeline_uses_existing_root_memory_file_in_prompt(tmp_path: Path) -> None:
+    workspace = tmp_path
+    memory_dir = workspace / "memory"
+    memory_dir.mkdir(parents=True)
+    (memory_dir / "MEMORY.md").write_text(
+        "# Long-term Memory\n\n## Preferences\n\n- reply_style: User prefers concise answers.",
+        encoding="utf-8",
+    )
+
+    provider = AsyncMock()
+    provider.chat_with_retry = AsyncMock(
+        return_value=LLMResponse(
+            content=None,
+            tool_calls=[
+                ToolCallRequest(
+                    id="v2_call_1",
+                    name="save_memory_structured",
+                    arguments={
+                        "history_entry": "[2026-04-01 09:00] User prefers concise answers.",
+                        "canonical_memories": [
+                            {
+                                "main_class": "preferences",
+                                "sub_class": "reply_style",
+                                "text": "User prefers concise answers.",
+                                "status": "active",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    )
+
+    pipeline = StructuredMemoryPipeline(workspace)
+
+    __import__("asyncio").run(
+        pipeline.ingest_chunk(
+            [
+                {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:00:00"},
+                {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:00:01"},
+            ],
+            provider,
+            "test-model",
+        )
+    )
+
+    prompt = provider.chat_with_retry.await_args_list[0].kwargs["messages"][1]["content"]
+    assert "reply_style: User prefers concise answers." in prompt
+
+
+def test_structured_pipeline_build_retrieval_context_returns_empty_without_db(tmp_path: Path) -> None:
+    pipeline = StructuredMemoryPipeline(tmp_path)
+
+    assert pipeline.build_retrieval_context("What should I know?") == ""
+
+
+def test_structured_pipeline_build_retrieval_context_returns_core_memory_for_empty_query(tmp_path: Path) -> None:
+    pipeline = StructuredMemoryPipeline(tmp_path)
+    pipeline.db.upsert_canonical_memory(
+        memory_id="mem_profile",
+        main_class="personal_profile",
+        sub_class="environment",
+        text="User works on Linux.",
+        status="active",
+    )
+    pipeline.db.upsert_canonical_memory(
+        memory_id="mem_pref",
+        main_class="preferences",
+        sub_class="reply_style",
+        text="User prefers concise answers.",
+        status="active",
+    )
+    pipeline.db.upsert_canonical_memory(
+        memory_id="mem_project",
+        main_class="projects",
+        sub_class="active_project",
+        text="The active project is nanobot.",
+        status="active",
+    )
+
+    context = pipeline.build_retrieval_context("   ")
+
+    assert "## Core Memory" in context
+    assert "[personal_profile/environment] User works on Linux." in context
+    assert "[preferences/reply_style] User prefers concise answers." in context
+    assert "## Retrieved Memory" not in context
+    assert "The active project is nanobot." not in context
+
+
+def test_structured_pipeline_build_retrieval_context_appends_non_core_hits(tmp_path: Path) -> None:
+    pipeline = StructuredMemoryPipeline(tmp_path)
+    pipeline.db.upsert_canonical_memory(
+        memory_id="mem_profile",
+        main_class="personal_profile",
+        sub_class="environment",
+        text="User works on Linux.",
+        status="active",
+    )
+    pipeline.db.upsert_canonical_memory(
+        memory_id="mem_project",
+        main_class="projects",
+        sub_class="active_project",
+        text="The active project is nanobot.",
+        status="active",
+    )
+
+    context = pipeline.build_retrieval_context("What's the active project?")
+
+    assert "## Core Memory" in context
+    assert "## Retrieved Memory" in context
+    assert "[projects/active_project] The active project is nanobot." in context
+
+
+def test_structured_pipeline_build_retrieval_context_dedupes_matches_without_memory_id(tmp_path: Path) -> None:
+    pipeline = StructuredMemoryPipeline(tmp_path)
+    pipeline.db.initialize()
+    with pipeline.db.connect() as conn:
+        conn.execute(
+            """
+            insert into canonical_memories(memory_id, main_class, sub_class, text, status)
+            values (?, ?, ?, ?, ?)
+            """,
+            ("mem_pref", "preferences", "reply_style", "User prefers concise answers.", "active"),
+        )
+        conn.execute(
+            """
+            insert into canonical_fts(memory_id, main_class, sub_class, text)
+            values (?, ?, ?, ?)
+            """,
+            ("mem_pref", "preferences", "reply_style", "User prefers concise answers."),
+        )
+        conn.execute(
+            """
+            insert into canonical_fts(memory_id, main_class, sub_class, text)
+            values (?, ?, ?, ?)
+            """,
+            ("", "preferences", "reply_style", "User prefers concise answers."),
+        )
+
+    context = pipeline.build_retrieval_context("concise answers")
+
+    assert context.count("[preferences/reply_style] User prefers concise answers.") == 1
+
+
+def test_structured_pipeline_replaces_full_snapshot_when_memory_changes(tmp_path: Path) -> None:
     first_payload = {
         "history_entry": "[2026-04-01 09:00] User prefers concise answers.",
         "canonical_memories": [
@@ -126,7 +261,7 @@ def test_shadow_pipeline_replaces_full_snapshot_when_memory_changes(tmp_path: Pa
                 "main_class": "preferences",
                 "sub_class": "reply_style",
                 "text": "User prefers concise answers.",
-                "confidence": 0.9,
+                "status": "active",
             }
         ],
     }
@@ -137,18 +272,18 @@ def test_shadow_pipeline_replaces_full_snapshot_when_memory_changes(tmp_path: Pa
                 "main_class": "preferences",
                 "sub_class": "reply_style",
                 "text": "User prefers bullet-point concise answers.",
-                "confidence": 0.93,
+                "status": "active",
             }
         ],
     }
 
     provider = AsyncMock()
     provider.chat_with_retry = AsyncMock(side_effect=[
-        LLMResponse(content=None, tool_calls=[ToolCallRequest(id="shadow_call_1", name="save_memory_shadow", arguments=first_payload)]),
-        LLMResponse(content=None, tool_calls=[ToolCallRequest(id="shadow_call_2", name="save_memory_shadow", arguments=second_payload)]),
+        LLMResponse(content=None, tool_calls=[ToolCallRequest(id="v2_call_1", name="save_memory_structured", arguments=first_payload)]),
+        LLMResponse(content=None, tool_calls=[ToolCallRequest(id="v2_call_2", name="save_memory_structured", arguments=second_payload)]),
     ])
 
-    pipeline = ShadowMemoryPipeline(tmp_path)
+    pipeline = StructuredMemoryPipeline(tmp_path)
     messages = [
         {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:00:00"},
         {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:00:01"},
@@ -167,7 +302,7 @@ def test_shadow_pipeline_replaces_full_snapshot_when_memory_changes(tmp_path: Pa
     assert first_memories[0]["memory_id"] != second_memories[0]["memory_id"]
 
 
-def test_shadow_pipeline_keeps_distinct_memories_with_same_subclass(tmp_path: Path) -> None:
+def test_structured_pipeline_keeps_distinct_memories_with_same_subclass(tmp_path: Path) -> None:
     payload = {
         "history_entry": "[2026-04-01 09:10] User has two active projects.",
         "canonical_memories": [
@@ -175,13 +310,13 @@ def test_shadow_pipeline_keeps_distinct_memories_with_same_subclass(tmp_path: Pa
                 "main_class": "projects",
                 "sub_class": "active_project",
                 "text": "The active project is nanobot.",
-                "confidence": 0.91,
+                "status": "active",
             },
             {
                 "main_class": "projects",
                 "sub_class": "active_project",
                 "text": "The active project is memory-v2-eval.",
-                "confidence": 0.89,
+                "status": "active",
             },
         ],
     }
@@ -189,11 +324,11 @@ def test_shadow_pipeline_keeps_distinct_memories_with_same_subclass(tmp_path: Pa
     provider.chat_with_retry = AsyncMock(
         return_value=LLMResponse(
             content=None,
-            tool_calls=[ToolCallRequest(id="shadow_call_1", name="save_memory_shadow", arguments=payload)],
+            tool_calls=[ToolCallRequest(id="v2_call_1", name="save_memory_structured", arguments=payload)],
         )
     )
 
-    pipeline = ShadowMemoryPipeline(tmp_path)
+    pipeline = StructuredMemoryPipeline(tmp_path)
     messages = [
         {"role": "user", "content": "Remember the active projects are nanobot and memory-v2-eval.", "timestamp": "2026-04-01T09:10:00"},
         {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:10:01"},
@@ -210,15 +345,59 @@ def test_shadow_pipeline_keeps_distinct_memories_with_same_subclass(tmp_path: Pa
     }
 
 
-def test_shadow_pipeline_empty_snapshot_clears_existing_memories(tmp_path: Path) -> None:
+def test_structured_pipeline_persists_non_active_statuses_but_hides_them_from_memory_view(tmp_path: Path) -> None:
+    payload = {
+        "history_entry": "[2026-04-01 09:12] Older preference is superseded.",
+        "canonical_memories": [
+            {
+                "main_class": "preferences",
+                "sub_class": "reply_style",
+                "text": "User prefers concise answers.",
+                "status": "active",
+            },
+            {
+                "main_class": "preferences",
+                "sub_class": "reply_style",
+                "text": "User once preferred verbose answers.",
+                "status": "superseded",
+            },
+        ],
+    }
+    provider = AsyncMock()
+    provider.chat_with_retry = AsyncMock(
+        return_value=LLMResponse(
+            content=None,
+            tool_calls=[ToolCallRequest(id="v2_call_1", name="save_memory_structured", arguments=payload)],
+        )
+    )
+
+    pipeline = StructuredMemoryPipeline(tmp_path)
+    messages = [
+        {"role": "user", "content": "Remember I now prefer concise answers.", "timestamp": "2026-04-01T09:12:00"},
+        {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:12:01"},
+    ]
+
+    __import__("asyncio").run(pipeline.ingest_chunk(messages, provider, "test-model"))
+
+    memories = pipeline.db.list_canonical_memories()
+    rendered = pipeline.db.memory_file.read_text(encoding="utf-8")
+    queried = pipeline.db.query_canonical_memories("verbose", limit=5)
+
+    assert {item["status"] for item in memories} == {"active", "superseded"}
+    assert "User prefers concise answers." in rendered
+    assert "User once preferred verbose answers." not in rendered
+    assert queried == []
+
+
+def test_structured_pipeline_empty_snapshot_clears_existing_memories(tmp_path: Path) -> None:
     provider = AsyncMock()
     provider.chat_with_retry = AsyncMock(side_effect=[
         LLMResponse(
             content=None,
             tool_calls=[
                 ToolCallRequest(
-                    id="shadow_call_1",
-                    name="save_memory_shadow",
+                    id="v2_call_1",
+                    name="save_memory_structured",
                     arguments={
                         "history_entry": "[2026-04-01 09:00] User prefers concise answers.",
                         "canonical_memories": [
@@ -226,7 +405,7 @@ def test_shadow_pipeline_empty_snapshot_clears_existing_memories(tmp_path: Path)
                                 "main_class": "preferences",
                                 "sub_class": "reply_style",
                                 "text": "User prefers concise answers.",
-                                "confidence": 0.9,
+                                "status": "active",
                             }
                         ],
                     },
@@ -237,8 +416,8 @@ def test_shadow_pipeline_empty_snapshot_clears_existing_memories(tmp_path: Path)
             content=None,
             tool_calls=[
                 ToolCallRequest(
-                    id="shadow_call_2",
-                    name="save_memory_shadow",
+                    id="v2_call_2",
+                    name="save_memory_structured",
                     arguments={
                         "history_entry": "[2026-04-01 09:05] The old preference should be removed.",
                         "canonical_memories": [],
@@ -248,7 +427,7 @@ def test_shadow_pipeline_empty_snapshot_clears_existing_memories(tmp_path: Path)
         ),
     ])
 
-    pipeline = ShadowMemoryPipeline(tmp_path)
+    pipeline = StructuredMemoryPipeline(tmp_path)
     messages = [
         {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:00:00"},
         {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:00:01"},
@@ -263,11 +442,11 @@ def test_shadow_pipeline_empty_snapshot_clears_existing_memories(tmp_path: Path)
     assert "(How the user prefers to communicate and collaborate)" in rendered
 
 
-def test_shadow_pipeline_raw_archives_after_repeated_failures(tmp_path: Path) -> None:
+def test_structured_pipeline_raw_archives_after_repeated_failures(tmp_path: Path) -> None:
     provider = AsyncMock()
     provider.chat_with_retry = AsyncMock(return_value=LLMResponse(content="no tool call", tool_calls=[]))
 
-    pipeline = ShadowMemoryPipeline(tmp_path)
+    pipeline = StructuredMemoryPipeline(tmp_path)
     messages = [
         {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:00:00"},
         {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:00:01"},
@@ -283,21 +462,21 @@ def test_shadow_pipeline_raw_archives_after_repeated_failures(tmp_path: Path) ->
 
     raw_events = pipeline.db.list_raw_events()
     assert len(raw_events) == 1
-    assert raw_events[0]["candidate_type"] == "shadow_raw_archive"
+    assert raw_events[0]["candidate_type"] == "v2_raw_archive"
     assert "[RAW] 2 messages" in raw_events[0]["history_text"]
     assert "Remember I prefer concise answers." in raw_events[0]["plain_text"]
     assert "[RAW] 2 messages" in pipeline.db.history_file.read_text(encoding="utf-8")
 
 
-def test_shadow_pipeline_raw_archive_preserves_existing_snapshot(tmp_path: Path) -> None:
+def test_structured_pipeline_raw_archive_preserves_existing_snapshot(tmp_path: Path) -> None:
     success_provider = AsyncMock()
     success_provider.chat_with_retry = AsyncMock(
         return_value=LLMResponse(
             content=None,
             tool_calls=[
                 ToolCallRequest(
-                    id="shadow_call_1",
-                    name="save_memory_shadow",
+                    id="v2_call_1",
+                    name="save_memory_structured",
                     arguments={
                         "history_entry": "[2026-04-01 09:00] User prefers concise answers.",
                         "canonical_memories": [
@@ -305,7 +484,7 @@ def test_shadow_pipeline_raw_archive_preserves_existing_snapshot(tmp_path: Path)
                                 "main_class": "preferences",
                                 "sub_class": "reply_style",
                                 "text": "User prefers concise answers.",
-                                "confidence": 0.92,
+                                "status": "active",
                             }
                         ],
                     },
@@ -316,7 +495,7 @@ def test_shadow_pipeline_raw_archive_preserves_existing_snapshot(tmp_path: Path)
     failure_provider = AsyncMock()
     failure_provider.chat_with_retry = AsyncMock(return_value=LLMResponse(content="no tool call", tool_calls=[]))
 
-    pipeline = ShadowMemoryPipeline(tmp_path)
+    pipeline = StructuredMemoryPipeline(tmp_path)
     messages = [
         {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:00:00"},
         {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:00:01"},
@@ -333,7 +512,7 @@ def test_shadow_pipeline_raw_archive_preserves_existing_snapshot(tmp_path: Path)
     assert before == after
 
 
-def test_shadow_pipeline_retries_with_auto_when_forced_tool_choice_is_unsupported(tmp_path: Path) -> None:
+def test_structured_pipeline_retries_with_auto_when_forced_tool_choice_is_unsupported(tmp_path: Path) -> None:
     provider = AsyncMock()
     provider.chat_with_retry = AsyncMock(side_effect=[
         LLMResponse(
@@ -345,8 +524,8 @@ def test_shadow_pipeline_retries_with_auto_when_forced_tool_choice_is_unsupporte
             content=None,
             tool_calls=[
                 ToolCallRequest(
-                    id="shadow_call_1",
-                    name="save_memory_shadow",
+                    id="v2_call_1",
+                    name="save_memory_structured",
                     arguments={
                         "history_entry": "[2026-04-01 09:20] User prefers concise answers.",
                         "canonical_memories": [
@@ -354,7 +533,7 @@ def test_shadow_pipeline_retries_with_auto_when_forced_tool_choice_is_unsupporte
                                 "main_class": "preferences",
                                 "sub_class": "reply_style",
                                 "text": "User prefers concise answers.",
-                                "confidence": 0.94,
+                                "status": "active",
                             }
                         ],
                     },
@@ -363,7 +542,7 @@ def test_shadow_pipeline_retries_with_auto_when_forced_tool_choice_is_unsupporte
         ),
     ])
 
-    pipeline = ShadowMemoryPipeline(tmp_path)
+    pipeline = StructuredMemoryPipeline(tmp_path)
     messages = [
         {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:20:00"},
         {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:20:01"},
@@ -382,15 +561,15 @@ def test_shadow_pipeline_retries_with_auto_when_forced_tool_choice_is_unsupporte
     assert memories[0]["text"] == "User prefers concise answers."
 
 
-def test_shadow_pipeline_invalid_snapshot_raw_archives_after_repeated_failures(tmp_path: Path) -> None:
+def test_structured_pipeline_invalid_snapshot_raw_archives_after_repeated_failures(tmp_path: Path) -> None:
     success_provider = AsyncMock()
     success_provider.chat_with_retry = AsyncMock(
         return_value=LLMResponse(
             content=None,
             tool_calls=[
                 ToolCallRequest(
-                    id="shadow_call_1",
-                    name="save_memory_shadow",
+                    id="v2_call_1",
+                    name="save_memory_structured",
                     arguments={
                         "history_entry": "[2026-04-01 09:00] User prefers concise answers.",
                         "canonical_memories": [
@@ -398,7 +577,7 @@ def test_shadow_pipeline_invalid_snapshot_raw_archives_after_repeated_failures(t
                                 "main_class": "preferences",
                                 "sub_class": "reply_style",
                                 "text": "User prefers concise answers.",
-                                "confidence": 0.92,
+                                "status": "active",
                             }
                         ],
                     },
@@ -412,8 +591,8 @@ def test_shadow_pipeline_invalid_snapshot_raw_archives_after_repeated_failures(t
             content=None,
             tool_calls=[
                 ToolCallRequest(
-                    id="shadow_call_bad",
-                    name="save_memory_shadow",
+                    id="v2_call_bad",
+                    name="save_memory_structured",
                     arguments={
                         "history_entry": "[2026-04-01 09:10] Attempted invalid snapshot update.",
                         "canonical_memories": [{"main_class": "preferences", "text": "   "}],
@@ -423,7 +602,7 @@ def test_shadow_pipeline_invalid_snapshot_raw_archives_after_repeated_failures(t
         )
     )
 
-    pipeline = ShadowMemoryPipeline(tmp_path)
+    pipeline = StructuredMemoryPipeline(tmp_path)
     messages = [
         {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:00:00"},
         {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:00:01"},
@@ -444,5 +623,49 @@ def test_shadow_pipeline_invalid_snapshot_raw_archives_after_repeated_failures(t
     assert result_three is True
     assert before == after
     assert len(raw_events) == 2
-    assert raw_events[-1]["candidate_type"] == "shadow_raw_archive"
+    assert raw_events[-1]["candidate_type"] == "v2_raw_archive"
     assert "[RAW] 2 messages" in raw_events[-1]["history_text"]
+
+
+def test_structured_pipeline_invalid_status_raw_archives_after_repeated_failures(tmp_path: Path) -> None:
+    invalid_provider = AsyncMock()
+    invalid_provider.chat_with_retry = AsyncMock(
+        return_value=LLMResponse(
+            content=None,
+            tool_calls=[
+                ToolCallRequest(
+                    id="v2_call_bad_status",
+                    name="save_memory_structured",
+                    arguments={
+                        "history_entry": "[2026-04-01 09:11] Attempted invalid status update.",
+                        "canonical_memories": [
+                            {
+                                "main_class": "preferences",
+                                "sub_class": "reply_style",
+                                "text": "User prefers concise answers.",
+                                "status": "fresh",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    )
+
+    pipeline = StructuredMemoryPipeline(tmp_path)
+    messages = [
+        {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:11:00"},
+        {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:11:01"},
+    ]
+
+    result_one = __import__("asyncio").run(pipeline.ingest_chunk(messages, invalid_provider, "test-model"))
+    result_two = __import__("asyncio").run(pipeline.ingest_chunk(messages, invalid_provider, "test-model"))
+    result_three = __import__("asyncio").run(pipeline.ingest_chunk(messages, invalid_provider, "test-model"))
+
+    raw_events = pipeline.db.list_raw_events()
+
+    assert result_one is False
+    assert result_two is False
+    assert result_three is True
+    assert len(raw_events) == 1
+    assert raw_events[0]["candidate_type"] == "v2_raw_archive"

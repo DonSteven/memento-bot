@@ -161,8 +161,9 @@ class ToolsConfig(Base):
 class MemoryConfig(Base):
     """Persistent memory configuration."""
 
-    mode: Literal["legacy", "shadow", "v2"] = "legacy"
-    retrieval_mode: Literal["full_view", "fts"] = "full_view"
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["legacy", "v2"] = "legacy"
 
 
 class Config(BaseSettings): # 继承自 pydantic.BaseSettings
