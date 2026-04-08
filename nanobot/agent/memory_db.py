@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
 from hashlib import sha1
@@ -12,7 +11,7 @@ from typing import Any
 from nanobot.utils.helpers import ensure_dir
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 MEMORY_STATUSES = ("active", "superseded", "archived", "uncertain")
 
 _SECTION_ORDER = (
@@ -224,7 +223,6 @@ class MemoryDatabase:
                     session_key text not null,
                     history_text text not null,
                     plain_text text not null default '',
-                    extracted_json text,
                     main_class text,
                     sub_class text,
                     candidate_type text,
@@ -266,7 +264,7 @@ class MemoryDatabase:
         required_columns = {
             "raw_events": {
                 "event_id", "ts", "session_key", "history_text", "plain_text",
-                "extracted_json", "main_class", "sub_class", "candidate_type",
+                "main_class", "sub_class", "candidate_type",
                 "status", "source_start_idx", "source_end_idx",
             },
             "canonical_memories": {"memory_id", "main_class", "sub_class", "text", "status"},
@@ -278,7 +276,7 @@ class MemoryDatabase:
             }
             if not columns:
                 continue
-            if "confidence" in columns or not expected.issubset(columns):
+            if "confidence" in columns or columns != expected:
                 raise RuntimeError(
                     "Existing memory.db uses an unsupported memory schema. "
                     "Delete memory/memory.db manually and rerun nanobot."
@@ -312,7 +310,6 @@ class MemoryDatabase:
         session_key: str,
         history_text: str,
         plain_text: str = "",
-        extracted: dict[str, Any] | None = None,
         main_class: str | None = None,
         sub_class: str | None = None,
         candidate_type: str | None = None,
@@ -333,7 +330,6 @@ class MemoryDatabase:
                 session_key=session_key,
                 history_text=history_text,
                 plain_text=plain_text,
-                extracted=extracted,
                 main_class=main_class,
                 sub_class=sub_class,
                 candidate_type=candidate_type,
@@ -382,7 +378,7 @@ class MemoryDatabase:
             rows = conn.execute(
                 """
                 select event_id, ts, session_key, history_text, plain_text,
-                       extracted_json, main_class, sub_class, candidate_type,
+                       main_class, sub_class, candidate_type,
                        status, source_start_idx, source_end_idx
                 from raw_events
                 order by ts asc, event_id asc
@@ -432,7 +428,6 @@ class MemoryDatabase:
         session_key: str,
         history_text: str,
         plain_text: str = "",
-        extracted: dict[str, Any] | None = None,
         candidate_type: str | None = None,
         memories: list[dict[str, Any]],
     ) -> None:
@@ -446,7 +441,6 @@ class MemoryDatabase:
                 session_key=session_key,
                 history_text=history_text,
                 plain_text=plain_text,
-                extracted=extracted,
                 candidate_type=candidate_type,
             )
             self._replace_canonical_snapshot_rows(conn, memories)
@@ -461,7 +455,6 @@ class MemoryDatabase:
         session_key: str,
         history_text: str,
         plain_text: str = "",
-        extracted: dict[str, Any] | None = None,
         main_class: str | None = None,
         sub_class: str | None = None,
         candidate_type: str | None = None,
@@ -477,9 +470,9 @@ class MemoryDatabase:
             """
             insert into raw_events(
                 event_id, ts, session_key, history_text, plain_text,
-                extracted_json, main_class, sub_class, candidate_type,
+                main_class, sub_class, candidate_type,
                 status, source_start_idx, source_end_idx
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event_id,
@@ -487,7 +480,6 @@ class MemoryDatabase:
                 session_key,
                 history_text,
                 plain_text,
-                json.dumps(extracted, ensure_ascii=False) if extracted is not None else None,
                 main_class,
                 sub_class,
                 candidate_type,

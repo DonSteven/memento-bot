@@ -101,7 +101,6 @@ class StructuredMemoryPipeline:
     def __init__(self, workspace: Path):
         self.workspace = workspace
         self.db = MemoryDatabase(workspace)
-        self.debug_file = self.db.memory_dir / "last_payload.json"
         self._consecutive_failures = 0
 
     @staticmethod
@@ -181,12 +180,6 @@ class StructuredMemoryPipeline:
             return self.db.render_memory_view()
         return "(empty)"
 
-    def _write_debug_payload(self, payload: dict[str, Any]) -> None:
-        self.debug_file.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-
     @staticmethod
     def _normalize_snapshot_memories(items: list[Any]) -> list[dict[str, Any]]:
         """Normalize the structured snapshot and ensure each memory gets a unique id."""
@@ -240,7 +233,6 @@ class StructuredMemoryPipeline:
             session_key=self._SESSION_KEY,
             history_text=history_entry,
             plain_text=plain_text,
-            extracted={"raw_archive": True, "message_count": len(messages)},
             candidate_type=self._RAW_ARCHIVE_CANDIDATE_TYPE,
         )
         self.db.write_views()
@@ -323,13 +315,6 @@ class StructuredMemoryPipeline:
                 logger.warning("Structured memory consolidation: no valid canonical memories after normalization")
                 return self._fail_or_raw_archive(messages)
 
-            payload = {
-                "history_entry": history_entry,
-                "canonical_memories": normalized_snapshot,
-                "message_count": len(messages),
-            }
-            self._write_debug_payload(payload)
-
             now = datetime.now().isoformat(timespec="seconds")
             event_id = (
                 f"{self._SESSION_KEY}_evt_"
@@ -341,7 +326,6 @@ class StructuredMemoryPipeline:
                 session_key=self._SESSION_KEY,
                 history_text=history_entry,
                 plain_text=self._format_messages(messages),
-                extracted=payload,
                 candidate_type=self._SNAPSHOT_CANDIDATE_TYPE,
                 memories=normalized_snapshot,
             )

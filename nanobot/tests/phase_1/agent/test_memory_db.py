@@ -10,6 +10,10 @@
 
 from __future__ import annotations
 
+import sqlite3
+
+import pytest
+
 from nanobot.agent.memory_db import MemoryDatabase, SCHEMA_VERSION
 
 
@@ -49,9 +53,37 @@ def test_store_and_list_records(tmp_path) -> None:
 
     assert len(raw_events) == 1
     assert raw_events[0]["event_id"] == "evt_1"
+    assert "extracted_json" not in raw_events[0]
     assert len(memories) == 1
     assert memories[0]["memory_id"] == "mem_1"
     assert memories[0]["text"] == "User prefers concise replies."
+
+
+def test_initialize_rejects_legacy_raw_events_schema_with_extracted_json(tmp_path) -> None:
+    db = MemoryDatabase(tmp_path)
+
+    with sqlite3.connect(db.db_path) as conn:
+        conn.executescript(
+            """
+            create table raw_events (
+                event_id text primary key,
+                ts text not null,
+                session_key text not null,
+                history_text text not null,
+                plain_text text not null default '',
+                extracted_json text,
+                main_class text,
+                sub_class text,
+                candidate_type text,
+                status text,
+                source_start_idx integer,
+                source_end_idx integer
+            );
+            """
+        )
+
+    with pytest.raises(RuntimeError, match="Delete memory/memory.db manually"):
+        db.initialize()
 
 
 def test_upsert_canonical_memory_replaces_existing_row(tmp_path) -> None:

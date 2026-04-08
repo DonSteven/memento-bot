@@ -1,6 +1,6 @@
 # Phase 2 test content:
 # - verifies the structured pipeline writes root memory artifacts into memory/
-# - verifies canonical memories, rendered views, and debug payload are all emitted
+# - verifies canonical memories and rendered views are emitted
 # - verifies repeated replay is stable after ignoring non-deterministic event metadata
 # - verifies snapshot replacement, empty-snapshot clears, and raw-archive fallback preserve correctness
 # - verifies tool_choice retry, prompt seeding, and invalid snapshot failures follow the v2 behavior
@@ -31,7 +31,6 @@ def _normalize_raw_events(events: list[dict]) -> list[dict]:
             "history_text": event["history_text"],
             "plain_text": event["plain_text"],
             "candidate_type": event["candidate_type"],
-            "extracted_json": event["extracted_json"],
         })
     return normalized
 
@@ -69,7 +68,7 @@ def test_structured_pipeline_writes_root_artifacts(tmp_path: Path) -> None:
     assert len(raw_events) == 1
     assert raw_events[0]["candidate_type"] == "v2_snapshot"
     assert len(memories) == 2
-    assert json.loads(pipeline.debug_file.read_text(encoding="utf-8"))["history_entry"] == fixture["tool_arguments"]["history_entry"]
+    assert not (tmp_path / "memory" / "last_payload.json").exists()
     assert not (tmp_path / "memory" / "shadow").exists()
 
 
