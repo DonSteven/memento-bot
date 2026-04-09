@@ -108,6 +108,64 @@ def test_structured_pipeline_replay_is_stable_ignoring_event_metadata(tmp_path: 
     assert _normalize_raw_events(raw_one) == _normalize_raw_events(raw_two)
 
 
+def test_structured_pipeline_builds_consolidation_prompt_from_db_snapshot(tmp_path: Path) -> None:
+    workspace = tmp_path
+    memory_dir = workspace / "memory"
+    memory_dir.mkdir(parents=True)
+    (memory_dir / "MEMORY.md").write_text(
+        "# Long-term Memory\n\n## Preferences\n\n- reply_style: stale file content that should not be reused.",
+        encoding="utf-8",
+    )
+
+    pipeline = StructuredMemoryPipeline(workspace)
+    pipeline.db.replace_canonical_snapshot([
+        {
+            "memory_id": "mem_active",
+            "main_class": "preferences",
+            "sub_class": "reply_style",
+            "text": "User prefers concise answers.",
+        },
+    ])
+
+    provider = AsyncMock()
+    provider.chat_with_retry = AsyncMock(
+        return_value=LLMResponse(
+            content=None,
+            tool_calls=[
+                ToolCallRequest(
+                    id="v2_call_1",
+                    name="save_memory_structured",
+                    arguments={
+                        "history_entry": "[2026-04-01 09:00] User prefers concise answers.",
+                        "canonical_memories": [
+                            {
+                                "main_class": "preferences",
+                                "sub_class": "reply_style",
+                                "text": "User prefers concise answers.",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    )
+
+    __import__("asyncio").run(
+        pipeline.ingest_chunk(
+            [
+                {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:00:00"},
+                {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:00:01"},
+            ],
+            provider,
+            "test-model",
+        )
+    )
+
+    prompt = provider.chat_with_retry.await_args_list[0].kwargs["messages"][1]["content"]
+    assert "## Preferences" in prompt
+    assert "reply_style: User prefers concise answers." in prompt
+    assert "## Inactive Memory Ledger" not in prompt
+    assert "stale file content that should not be reused" not in prompt
 
 
 def test_structured_pipeline_build_retrieval_context_returns_empty_without_db(tmp_path: Path) -> None:
@@ -371,8 +429,54 @@ def test_structured_pipeline_persists_all_memories_in_memory_view(tmp_path: Path
     assert queried[0]["text"] == "User once preferred verbose answers."
 
 
+def test_structured_pipeline_consolidation_view_matches_rendered_memory_view(tmp_path: Path) -> None:
+    pipeline = StructuredMemoryPipeline(tmp_path)
+    pipeline.db.replace_canonical_snapshot([
+        {
+            "memory_id": "mem_active",
+            "main_class": "preferences",
+            "sub_class": "reply_style",
+            "text": "User prefers concise answers.",
+        }
+    ])
+
+    view = pipeline._build_consolidation_memory_view()
+
+    assert view == pipeline.db.render_memory_view()
+    assert "## Preferences" in view
+    assert "reply_style: User prefers concise answers." in view
 
 
+def test_structured_pipeline_consolidation_view_includes_all_snapshot_memories(tmp_path: Path) -> None:
+    pipeline = StructuredMemoryPipeline(tmp_path)
+    pipeline.db.replace_canonical_snapshot([
+        {
+            "memory_id": "mem_active",
+            "main_class": "preferences",
+            "sub_class": "reply_style",
+            "text": "User prefers concise answers.",
+        },
+        {
+            "memory_id": "mem_verbose",
+            "main_class": "preferences",
+            "sub_class": "reply_style",
+            "text": "User once preferred verbose answers.",
+        },
+        {
+            "memory_id": "mem_project",
+            "main_class": "projects",
+            "sub_class": "active_project",
+            "text": "The active project is nanobot.",
+        },
+    ])
+
+    view = pipeline._build_consolidation_memory_view()
+
+    assert "## Preferences" in view
+    assert "reply_style: User prefers concise answers." in view
+    assert "reply_style: User once preferred verbose answers." in view
+    assert "## Projects" in view
+    assert "active_project: The active project is nanobot." in view
 
 
 def test_structured_pipeline_empty_snapshot_clears_existing_memories(tmp_path: Path) -> None:

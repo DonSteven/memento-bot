@@ -217,6 +217,25 @@ def test_run_memory_extraction_eval_loads_cases_path_and_injects_prior_memory(tm
     assert "User prefers concise answers." in v2_prompt
 
 
+def test_run_memory_extraction_eval_ignores_legacy_prior_markdown_without_subclass(tmp_path) -> None:
+    cases = _build_cases()[1:2]
+    cases[0]["prior_memory_markdown"] = (
+        "# Long-term Memory\n\n"
+        "## Preferences\n\n"
+        "- User prefers concise answers.\n"
+    )
+
+    v2_requests: list[list[dict[str, Any]]] = []
+    report = run_memory_extraction_eval(
+        cases=cases,
+        v2_provider_factory=lambda case: _v2_factory(case, request_log=v2_requests),
+        model="test-model",
+    )
+
+    assert len(v2_requests) == 1
+    v2_prompt = v2_requests[0][1]["content"]
+    assert "User prefers concise answers." not in v2_prompt
+    assert report["cases"][0]["prior_snapshot"] == []
 
 
 def test_render_and_save_memory_extraction_report(tmp_path) -> None:

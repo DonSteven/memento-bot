@@ -174,11 +174,9 @@ class StructuredMemoryPipeline:
         return "\n".join(lines)
 
     def _build_consolidation_memory_view(self) -> str:
-        if self.db.memory_file.exists():
-            return self.db.memory_file.read_text(encoding="utf-8")
-        if self.db.db_path.exists():
-            return self.db.render_memory_view()
-        return "(empty)"
+        if not self.db.db_path.exists():
+            return "(empty)"
+        return self.db.render_memory_view()
 
     @staticmethod
     def _normalize_snapshot_memories(items: list[Any]) -> list[dict[str, Any]]:

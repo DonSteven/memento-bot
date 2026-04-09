@@ -613,9 +613,15 @@ def _score_memory_extraction(
 def _inject_prior_memory(workspace: Path, prior_memory_markdown: str) -> None:
     if not prior_memory_markdown.strip():
         return
+    snapshot = parse_memory_markdown(prior_memory_markdown)
     memory_dir = workspace / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
     (memory_dir / "MEMORY.md").write_text(prior_memory_markdown, encoding="utf-8")
+    if snapshot:
+        store = MemoryStore(workspace, mode="v2")
+        assert store.v2_db is not None
+        store.v2_db.replace_canonical_snapshot(snapshot)
+        store.v2_db.write_views()
 
 
 async def _run_v2_memory_extraction_case(
