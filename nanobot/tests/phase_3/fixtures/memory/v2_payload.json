@@ -17,20 +17,17 @@
       {
         "main_class": "personal_profile",
         "sub_class": "environment",
-        "text": "User works on Linux.",
-        "status": "active"
+        "text": "User works on Linux."
       },
       {
         "main_class": "preferences",
         "sub_class": "reply_style",
-        "text": "User prefers concise answers.",
-        "status": "active"
+        "text": "User prefers concise answers."
       },
       {
         "main_class": "projects",
         "sub_class": "active_project",
-        "text": "The active project is nanobot.",
-        "status": "active"
+        "text": "The active project is nanobot."
       }
     ]
   },
@@ -39,7 +36,6 @@
   "expected": {
     "main_classes": ["personal_profile", "preferences", "projects"],
     "sub_classes": ["environment", "reply_style", "active_project"],
-    "statuses": ["active", "active", "active"],
     "texts": [
       "User works on Linux.",
       "User prefers concise answers.",

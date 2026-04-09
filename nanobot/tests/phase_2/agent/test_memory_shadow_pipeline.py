@@ -108,54 +108,6 @@ def test_structured_pipeline_replay_is_stable_ignoring_event_metadata(tmp_path: 
     assert _normalize_raw_events(raw_one) == _normalize_raw_events(raw_two)
 
 
-def test_structured_pipeline_uses_existing_root_memory_file_in_prompt(tmp_path: Path) -> None:
-    workspace = tmp_path
-    memory_dir = workspace / "memory"
-    memory_dir.mkdir(parents=True)
-    (memory_dir / "MEMORY.md").write_text(
-        "# Long-term Memory\n\n## Preferences\n\n- reply_style: User prefers concise answers.",
-        encoding="utf-8",
-    )
-
-    provider = AsyncMock()
-    provider.chat_with_retry = AsyncMock(
-        return_value=LLMResponse(
-            content=None,
-            tool_calls=[
-                ToolCallRequest(
-                    id="v2_call_1",
-                    name="save_memory_structured",
-                    arguments={
-                        "history_entry": "[2026-04-01 09:00] User prefers concise answers.",
-                        "canonical_memories": [
-                            {
-                                "main_class": "preferences",
-                                "sub_class": "reply_style",
-                                "text": "User prefers concise answers.",
-                                "status": "active",
-                            }
-                        ],
-                    },
-                )
-            ],
-        )
-    )
-
-    pipeline = StructuredMemoryPipeline(workspace)
-
-    __import__("asyncio").run(
-        pipeline.ingest_chunk(
-            [
-                {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:00:00"},
-                {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:00:01"},
-            ],
-            provider,
-            "test-model",
-        )
-    )
-
-    prompt = provider.chat_with_retry.await_args_list[0].kwargs["messages"][1]["content"]
-    assert "reply_style: User prefers concise answers." in prompt
 
 
 def test_structured_pipeline_build_retrieval_context_returns_empty_without_db(tmp_path: Path) -> None:
@@ -171,21 +123,18 @@ def test_structured_pipeline_build_retrieval_context_returns_core_memory_for_emp
         main_class="personal_profile",
         sub_class="environment",
         text="User works on Linux.",
-        status="active",
     )
     pipeline.db.upsert_canonical_memory(
         memory_id="mem_pref",
         main_class="preferences",
         sub_class="reply_style",
         text="User prefers concise answers.",
-        status="active",
     )
     pipeline.db.upsert_canonical_memory(
         memory_id="mem_project",
         main_class="projects",
         sub_class="active_project",
         text="The active project is nanobot.",
-        status="active",
     )
 
     context = pipeline.build_retrieval_context("   ")
@@ -204,14 +153,12 @@ def test_structured_pipeline_build_retrieval_context_appends_non_core_hits(tmp_p
         main_class="personal_profile",
         sub_class="environment",
         text="User works on Linux.",
-        status="active",
     )
     pipeline.db.upsert_canonical_memory(
         memory_id="mem_project",
         main_class="projects",
         sub_class="active_project",
         text="The active project is nanobot.",
-        status="active",
     )
 
     context = pipeline.build_retrieval_context("What's the active project?")
@@ -227,10 +174,10 @@ def test_structured_pipeline_build_retrieval_context_dedupes_matches_without_mem
     with pipeline.db.connect() as conn:
         conn.execute(
             """
-            insert into canonical_memories(memory_id, main_class, sub_class, text, status)
-            values (?, ?, ?, ?, ?)
+            insert into canonical_memories(memory_id, main_class, sub_class, text)
+            values (?, ?, ?, ?)
             """,
-            ("mem_pref", "preferences", "reply_style", "User prefers concise answers.", "active"),
+            ("mem_pref", "preferences", "reply_style", "User prefers concise answers."),
         )
         conn.execute(
             """
@@ -260,7 +207,6 @@ def test_structured_pipeline_replaces_full_snapshot_when_memory_changes(tmp_path
                 "main_class": "preferences",
                 "sub_class": "reply_style",
                 "text": "User prefers concise answers.",
-                "status": "active",
             }
         ],
     }
@@ -271,7 +217,6 @@ def test_structured_pipeline_replaces_full_snapshot_when_memory_changes(tmp_path
                 "main_class": "preferences",
                 "sub_class": "reply_style",
                 "text": "User prefers bullet-point concise answers.",
-                "status": "active",
             }
         ],
     }
@@ -309,13 +254,11 @@ def test_structured_pipeline_keeps_distinct_memories_with_same_subclass(tmp_path
                 "main_class": "projects",
                 "sub_class": "active_project",
                 "text": "The active project is nanobot.",
-                "status": "active",
             },
             {
                 "main_class": "projects",
                 "sub_class": "active_project",
                 "text": "The active project is memory-v2-eval.",
-                "status": "active",
             },
         ],
     }
@@ -344,21 +287,60 @@ def test_structured_pipeline_keeps_distinct_memories_with_same_subclass(tmp_path
     }
 
 
-def test_structured_pipeline_persists_non_active_statuses_but_hides_them_from_memory_view(tmp_path: Path) -> None:
+def test_structured_pipeline_accepts_new_subclass_names(tmp_path: Path) -> None:
     payload = {
-        "history_entry": "[2026-04-01 09:12] Older preference is superseded.",
+        "history_entry": "[2026-04-01 09:11] User prefers high-signal implementation summaries.",
+        "canonical_memories": [
+            {
+                "main_class": "preferences",
+                "sub_class": "implementation_summary_style",
+                "text": "User prefers high-signal implementation summaries.",
+            }
+        ],
+    }
+    provider = AsyncMock()
+    provider.chat_with_retry = AsyncMock(
+        return_value=LLMResponse(
+            content=None,
+            tool_calls=[ToolCallRequest(id="v2_call_1", name="save_memory_structured", arguments=payload)],
+        )
+    )
+
+    pipeline = StructuredMemoryPipeline(tmp_path)
+    messages = [
+        {"role": "user", "content": "Remember I prefer high-signal implementation summaries.", "timestamp": "2026-04-01T09:11:00"},
+        {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:11:01"},
+    ]
+
+    __import__("asyncio").run(pipeline.ingest_chunk(messages, provider, "test-model"))
+
+    memories = pipeline.db.list_canonical_memories()
+    assert memories == [
+        {
+            "memory_id": memories[0]["memory_id"],
+            "main_class": "preferences",
+            "sub_class": "implementation_summary_style",
+            "text": "User prefers high-signal implementation summaries.",
+        }
+    ]
+    assert "implementation_summary_style: User prefers high-signal implementation summaries." in (
+        pipeline.db.memory_file.read_text(encoding="utf-8")
+    )
+
+
+def test_structured_pipeline_persists_all_memories_in_memory_view(tmp_path: Path) -> None:
+    payload = {
+        "history_entry": "[2026-04-01 09:12] User prefers both concise and verbose answers in different contexts.",
         "canonical_memories": [
             {
                 "main_class": "preferences",
                 "sub_class": "reply_style",
                 "text": "User prefers concise answers.",
-                "status": "active",
             },
             {
                 "main_class": "preferences",
                 "sub_class": "reply_style",
                 "text": "User once preferred verbose answers.",
-                "status": "superseded",
             },
         ],
     }
@@ -382,10 +364,15 @@ def test_structured_pipeline_persists_non_active_statuses_but_hides_them_from_me
     rendered = pipeline.db.memory_file.read_text(encoding="utf-8")
     queried = pipeline.db.query_canonical_memories("verbose", limit=5)
 
-    assert {item["status"] for item in memories} == {"active", "superseded"}
+    assert len(memories) == 2
     assert "User prefers concise answers." in rendered
-    assert "User once preferred verbose answers." not in rendered
-    assert queried == []
+    assert "User once preferred verbose answers." in rendered
+    assert len(queried) == 1
+    assert queried[0]["text"] == "User once preferred verbose answers."
+
+
+
+
 
 
 def test_structured_pipeline_empty_snapshot_clears_existing_memories(tmp_path: Path) -> None:
@@ -404,7 +391,6 @@ def test_structured_pipeline_empty_snapshot_clears_existing_memories(tmp_path: P
                                 "main_class": "preferences",
                                 "sub_class": "reply_style",
                                 "text": "User prefers concise answers.",
-                                "status": "active",
                             }
                         ],
                     },
@@ -439,6 +425,61 @@ def test_structured_pipeline_empty_snapshot_clears_existing_memories(tmp_path: P
     rendered = pipeline.db.memory_file.read_text(encoding="utf-8")
     assert memories == []
     assert "(How the user prefers to communicate and collaborate)" in rendered
+
+
+def test_structured_pipeline_second_consolidation_prompt_preserves_existing_snapshot_context(tmp_path: Path) -> None:
+    first_payload = {
+        "history_entry": "[2026-04-01 09:00] User prefers concise and verbose answers in different contexts.",
+        "canonical_memories": [
+            {
+                "main_class": "preferences",
+                "sub_class": "reply_style",
+                "text": "User prefers concise answers.",
+            },
+            {
+                "main_class": "preferences",
+                "sub_class": "reply_style",
+                "text": "User once preferred verbose answers.",
+            },
+        ],
+    }
+    second_payload = {
+        "history_entry": "[2026-04-01 09:05] Existing preference context remains available.",
+        "canonical_memories": [
+            {
+                "main_class": "preferences",
+                "sub_class": "reply_style",
+                "text": "User prefers concise answers.",
+            },
+            {
+                "main_class": "preferences",
+                "sub_class": "reply_style",
+                "text": "User once preferred verbose answers.",
+            },
+        ],
+    }
+
+    provider = AsyncMock()
+    provider.chat_with_retry = AsyncMock(side_effect=[
+        LLMResponse(content=None, tool_calls=[ToolCallRequest(id="v2_call_1", name="save_memory_structured", arguments=first_payload)]),
+        LLMResponse(content=None, tool_calls=[ToolCallRequest(id="v2_call_2", name="save_memory_structured", arguments=second_payload)]),
+    ])
+
+    pipeline = StructuredMemoryPipeline(tmp_path)
+    messages = [
+        {"role": "user", "content": "Remember I prefer concise answers now.", "timestamp": "2026-04-01T09:00:00"},
+        {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:00:01"},
+    ]
+
+    __import__("asyncio").run(pipeline.ingest_chunk(messages, provider, "test-model"))
+    __import__("asyncio").run(pipeline.ingest_chunk(messages, provider, "test-model"))
+
+    second_prompt = provider.chat_with_retry.await_args_list[1].kwargs["messages"][1]["content"]
+    memories = pipeline.db.list_canonical_memories()
+
+    assert "## Preferences" in second_prompt
+    assert "reply_style: User once preferred verbose answers." in second_prompt
+    assert len(memories) == 2
 
 
 def test_structured_pipeline_raw_archives_after_repeated_failures(tmp_path: Path) -> None:
@@ -483,7 +524,6 @@ def test_structured_pipeline_raw_archive_preserves_existing_snapshot(tmp_path: P
                                 "main_class": "preferences",
                                 "sub_class": "reply_style",
                                 "text": "User prefers concise answers.",
-                                "status": "active",
                             }
                         ],
                     },
@@ -532,7 +572,6 @@ def test_structured_pipeline_retries_with_auto_when_forced_tool_choice_is_unsupp
                                 "main_class": "preferences",
                                 "sub_class": "reply_style",
                                 "text": "User prefers concise answers.",
-                                "status": "active",
                             }
                         ],
                     },
@@ -576,7 +615,6 @@ def test_structured_pipeline_invalid_snapshot_raw_archives_after_repeated_failur
                                 "main_class": "preferences",
                                 "sub_class": "reply_style",
                                 "text": "User prefers concise answers.",
-                                "status": "active",
                             }
                         ],
                     },
@@ -594,7 +632,7 @@ def test_structured_pipeline_invalid_snapshot_raw_archives_after_repeated_failur
                     name="save_memory_structured",
                     arguments={
                         "history_entry": "[2026-04-01 09:10] Attempted invalid snapshot update.",
-                        "canonical_memories": [{"main_class": "preferences", "text": "   "}],
+                        "canonical_memories": [{"main_class": "preferences", "text": "User prefers concise answers."}],
                     },
                 )
             ],
@@ -624,47 +662,3 @@ def test_structured_pipeline_invalid_snapshot_raw_archives_after_repeated_failur
     assert len(raw_events) == 2
     assert raw_events[-1]["candidate_type"] == "v2_raw_archive"
     assert "[RAW] 2 messages" in raw_events[-1]["history_text"]
-
-
-def test_structured_pipeline_invalid_status_raw_archives_after_repeated_failures(tmp_path: Path) -> None:
-    invalid_provider = AsyncMock()
-    invalid_provider.chat_with_retry = AsyncMock(
-        return_value=LLMResponse(
-            content=None,
-            tool_calls=[
-                ToolCallRequest(
-                    id="v2_call_bad_status",
-                    name="save_memory_structured",
-                    arguments={
-                        "history_entry": "[2026-04-01 09:11] Attempted invalid status update.",
-                        "canonical_memories": [
-                            {
-                                "main_class": "preferences",
-                                "sub_class": "reply_style",
-                                "text": "User prefers concise answers.",
-                                "status": "fresh",
-                            }
-                        ],
-                    },
-                )
-            ],
-        )
-    )
-
-    pipeline = StructuredMemoryPipeline(tmp_path)
-    messages = [
-        {"role": "user", "content": "Remember I prefer concise answers.", "timestamp": "2026-04-01T09:11:00"},
-        {"role": "assistant", "content": "Noted.", "timestamp": "2026-04-01T09:11:01"},
-    ]
-
-    result_one = __import__("asyncio").run(pipeline.ingest_chunk(messages, invalid_provider, "test-model"))
-    result_two = __import__("asyncio").run(pipeline.ingest_chunk(messages, invalid_provider, "test-model"))
-    result_three = __import__("asyncio").run(pipeline.ingest_chunk(messages, invalid_provider, "test-model"))
-
-    raw_events = pipeline.db.list_raw_events()
-
-    assert result_one is False
-    assert result_two is False
-    assert result_three is True
-    assert len(raw_events) == 1
-    assert raw_events[0]["candidate_type"] == "v2_raw_archive"

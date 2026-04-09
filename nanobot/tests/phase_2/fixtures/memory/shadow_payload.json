@@ -17,14 +17,12 @@
       {
         "main_class": "personal_profile",
         "sub_class": "environment",
-        "text": "User works on Linux.",
-        "status": "active"
+        "text": "User works on Linux."
       },
       {
         "main_class": "preferences",
         "sub_class": "reply_style",
-        "text": "User prefers concise answers.",
-        "status": "active"
+        "text": "User prefers concise answers."
       }
     ]
   },

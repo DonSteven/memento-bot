@@ -70,7 +70,6 @@ def _v2_response() -> LLMResponse:
                             "main_class": "preferences",
                             "sub_class": "reply_style",
                             "text": "User prefers concise replies.",
-                            "status": "active",
                         }
                     ],
                 },

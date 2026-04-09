@@ -37,21 +37,18 @@ def test_context_builder_v2_injects_core_memory_without_full_view_fallback(tmp_p
         main_class="personal_profile",
         sub_class="environment",
         text="User works on Linux.",
-        status="active",
     )
     db.upsert_canonical_memory(
         memory_id="mem_pref",
         main_class="preferences",
         sub_class="reply_style",
         text="User prefers concise answers.",
-        status="active",
     )
     db.upsert_canonical_memory(
         memory_id="mem_project",
         main_class="projects",
         sub_class="active_project",
         text="The active project is nanobot.",
-        status="active",
     )
     db.write_views()
 
@@ -75,28 +72,24 @@ def test_context_builder_v2_injects_core_memory_and_filters_irrelevant_matches(t
         main_class="personal_profile",
         sub_class="environment",
         text="User works on Linux.",
-        status="active",
     )
     db.upsert_canonical_memory(
         memory_id="mem_pref",
         main_class="preferences",
         sub_class="reply_style",
         text="User prefers concise answers.",
-        status="active",
     )
     db.upsert_canonical_memory(
         memory_id="mem_constraint",
         main_class="constraints",
         sub_class="tooling",
         text="Avoid interactive git commands.",
-        status="active",
     )
     db.upsert_canonical_memory(
         memory_id="mem_project",
         main_class="projects",
         sub_class="active_project",
         text="The active project is nanobot.",
-        status="active",
     )
     db.write_views()
 
@@ -119,28 +112,18 @@ def test_context_builder_v2_appends_relevant_project_hits_after_core_memory(tmp_
         main_class="personal_profile",
         sub_class="environment",
         text="User works on Linux.",
-        status="active",
     )
     db.upsert_canonical_memory(
         memory_id="mem_pref",
         main_class="preferences",
         sub_class="reply_style",
         text="User prefers concise answers.",
-        status="active",
     )
     db.upsert_canonical_memory(
         memory_id="mem_project",
         main_class="projects",
         sub_class="active_project",
         text="The active project is nanobot.",
-        status="active",
-    )
-    db.upsert_canonical_memory(
-        memory_id="mem_old_project",
-        main_class="projects",
-        sub_class="active_project",
-        text="The active project used to be legacy-bot.",
-        status="archived",
     )
     db.write_views()
 
@@ -151,4 +134,3 @@ def test_context_builder_v2_appends_relevant_project_hits_after_core_memory(tmp_
     assert "## Core Memory" in system_prompt
     assert "## Retrieved Memory" in system_prompt
     assert "[projects/active_project] The active project is nanobot." in system_prompt
-    assert "legacy-bot" not in system_prompt

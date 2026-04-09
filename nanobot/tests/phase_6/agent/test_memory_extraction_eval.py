@@ -53,7 +53,6 @@ def _memory(*items: tuple[str, str, str]) -> list[dict[str, Any]]:
             "main_class": main_class,
             "sub_class": sub_class,
             "text": text,
-            "status": "active",
         }
         for main_class, sub_class, text in items
     ]
@@ -124,14 +123,7 @@ def _build_cases() -> list[dict[str, Any]]:
             "mock_responses": {
                 "v2": {
                     "history_entry": "[2026-04-02 10:04] The git restriction is outdated.",
-                    "canonical_memories": profile_only + [
-                        {
-                            "main_class": "constraints",
-                            "sub_class": "tooling",
-                            "text": "Avoid interactive git commands.",
-                            "status": "archived",
-                        }
-                    ],
+                    "canonical_memories": profile_only,
                 },
             },
         },
@@ -223,6 +215,8 @@ def test_run_memory_extraction_eval_loads_cases_path_and_injects_prior_memory(tm
     assert len(v2_requests) == 1
     v2_prompt = v2_requests[0][1]["content"]
     assert "User prefers concise answers." in v2_prompt
+
+
 
 
 def test_render_and_save_memory_extraction_report(tmp_path) -> None:

@@ -56,7 +56,6 @@ async def test_v2_mode_writes_db_backed_views(tmp_path: Path) -> None:
 
     assert [item["main_class"] for item in canonical] == fixture["expected"]["main_classes"]
     assert [item["sub_class"] for item in canonical] == fixture["expected"]["sub_classes"]
-    assert [item["status"] for item in canonical] == fixture["expected"]["statuses"]
     assert [item["text"] for item in canonical] == fixture["expected"]["texts"]
     assert len(raw_events) == 1
     assert "extracted_json" not in raw_events[0]

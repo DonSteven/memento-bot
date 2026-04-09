@@ -11,8 +11,7 @@ from typing import Any
 from nanobot.utils.helpers import ensure_dir
 
 
-SCHEMA_VERSION = 4
-MEMORY_STATUSES = ("active", "superseded", "archived", "uncertain")
+SCHEMA_VERSION = 5
 
 _SECTION_ORDER = (
     ("personal_profile", "Personal Profile", "(Stable background information about the user)"),
@@ -31,9 +30,9 @@ def _validate_main_class(main_class: str) -> None:
         raise ValueError(f"Unsupported main_class: {main_class}")
 
 
-def _validate_status(status: str) -> None:
-    if status not in MEMORY_STATUSES:
-        raise ValueError(f"Unsupported status: {status}")
+def _validate_sub_class(sub_class: str) -> None:
+    if not sub_class.strip():
+        raise ValueError("sub_class must be a non-empty string")
 
 
 def render_memory_markdown(memories: list[dict[str, Any]]) -> str:
@@ -41,9 +40,6 @@ def render_memory_markdown(memories: list[dict[str, Any]]) -> str:
         把“结构化的长期记忆列表”渲染成一个给人看的 MEMORY.md 文本"""
     grouped: dict[str, list[dict[str, Any]]] = {key: [] for key, _, _ in _SECTION_ORDER}
     for memory in memories:
-        status = str(memory.get("status") or "active").strip() or "active"
-        if status != "active":
-            continue
         main_class = str(memory["main_class"])
         _validate_main_class(main_class)
         grouped[main_class].append(memory)
@@ -71,12 +67,9 @@ def render_memory_markdown(memories: list[dict[str, Any]]) -> str:
         for item in section_items:
             sub_class = str(item.get("sub_class") or "").strip()
             text = str(item.get("text") or "").strip()
-            if not text:
+            if not sub_class or not text:
                 continue
-            if sub_class and sub_class != "general":
-                rendered_items.append(f"- {sub_class}: {text}")
-            else:
-                rendered_items.append(f"- {text}")
+            rendered_items.append(f"- {sub_class}: {text}")
 
         if not rendered_items:
             lines.append(placeholder)
@@ -112,7 +105,8 @@ def render_history_markdown(events: list[dict[str, Any]]) -> str:
 
 
 def _canonical_memory_id(main_class: str, sub_class: str, text: str) -> str:
-    safe_slot = (sub_class or "general").strip().lower() or "general"
+    _validate_sub_class(sub_class)
+    safe_slot = sub_class.strip().lower()
     safe_slot = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in safe_slot)
     digest = sha1(text.strip().encode("utf-8")).hexdigest()[:12]
     return f"{main_class}:{safe_slot}:{digest}"
@@ -167,20 +161,19 @@ def parse_memory_markdown(content: str) -> list[dict[str, Any]]:
         body = line[2:].strip()
         if not body:
             continue
-        sub_class = ""
-        text = body
-        if ": " in body:
-            maybe_sub_class, maybe_text = body.split(": ", 1)
-            if maybe_text.strip():
-                sub_class = maybe_sub_class.strip()
-                text = maybe_text.strip()
+        if ": " not in body:
+            continue
+        maybe_sub_class, maybe_text = body.split(": ", 1)
+        sub_class = maybe_sub_class.strip()
+        text = maybe_text.strip()
+        if not sub_class or not text:
+            continue
         memory_id = _canonical_memory_id(current_main_class, sub_class, text)
         memories.append({
             "memory_id": memory_id,
             "main_class": current_main_class,
             "sub_class": sub_class,
             "text": text,
-            "status": "active",
         })
     return memories
 
@@ -226,7 +219,6 @@ class MemoryDatabase:
                     main_class text,
                     sub_class text,
                     candidate_type text,
-                    status text,
                     source_start_idx integer,
                     source_end_idx integer
                 );
@@ -235,8 +227,7 @@ class MemoryDatabase:
                     memory_id text primary key,
                     main_class text not null,
                     sub_class text not null default '',
-                    text text not null,
-                    status text not null
+                    text text not null
                 );
 
                 drop table if exists memory_evidence;
@@ -265,9 +256,9 @@ class MemoryDatabase:
             "raw_events": {
                 "event_id", "ts", "session_key", "history_text", "plain_text",
                 "main_class", "sub_class", "candidate_type",
-                "status", "source_start_idx", "source_end_idx",
+                "source_start_idx", "source_end_idx",
             },
-            "canonical_memories": {"memory_id", "main_class", "sub_class", "text", "status"},
+            "canonical_memories": {"memory_id", "main_class", "sub_class", "text"},
         }
         for table_name, expected in required_columns.items():
             columns = {
@@ -290,7 +281,6 @@ class MemoryDatabase:
             insert into canonical_fts(memory_id, main_class, sub_class, text)
             select memory_id, main_class, sub_class, text
             from canonical_memories
-            where status = 'active'
             """
         )
 
@@ -313,15 +303,12 @@ class MemoryDatabase:
         main_class: str | None = None,
         sub_class: str | None = None,
         candidate_type: str | None = None,
-        status: str | None = None,
         source_start_idx: int | None = None,
         source_end_idx: int | None = None,
     ) -> None:
         self.initialize()
         if main_class is not None:
             _validate_main_class(main_class)
-        if status is not None:
-            _validate_status(status)
         with self.connect() as conn:
             self._insert_raw_event_row(
                 conn,
@@ -333,7 +320,6 @@ class MemoryDatabase:
                 main_class=main_class,
                 sub_class=sub_class,
                 candidate_type=candidate_type,
-                status=status,
                 source_start_idx=source_start_idx,
                 source_end_idx=source_end_idx,
             )
@@ -344,30 +330,27 @@ class MemoryDatabase:
         memory_id: str,
         main_class: str,
         text: str,
-        sub_class: str = "",
-        status: str,
+        sub_class: str,
     ) -> None:
         self.initialize()
         _validate_main_class(main_class)
-        _validate_status(status)
+        _validate_sub_class(sub_class)
         with self.connect() as conn:
             conn.execute(
                 """
                 insert into canonical_memories(
-                    memory_id, main_class, sub_class, text, status
-                ) values (?, ?, ?, ?, ?)
+                    memory_id, main_class, sub_class, text
+                ) values (?, ?, ?, ?)
                 on conflict(memory_id) do update set
                     main_class=excluded.main_class,
                     sub_class=excluded.sub_class,
-                    text=excluded.text,
-                    status=excluded.status
+                    text=excluded.text
                 """,
                 (
                     memory_id,
                     main_class,
                     sub_class,
                     text,
-                    status,
                 ),
             )
             self._rebuild_fts(conn)
@@ -379,29 +362,27 @@ class MemoryDatabase:
                 """
                 select event_id, ts, session_key, history_text, plain_text,
                        main_class, sub_class, candidate_type,
-                       status, source_start_idx, source_end_idx
+                       source_start_idx, source_end_idx
                 from raw_events
                 order by ts asc, event_id asc
                 """
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def list_canonical_memories(self, *, active_only: bool = False) -> list[dict[str, Any]]:
+    def list_canonical_memories(self) -> list[dict[str, Any]]:
         self.initialize()
-        where_clause = "where status = 'active'" if active_only else ""
         with self.connect() as conn:
             rows = conn.execute(
-                f"""
-                select memory_id, main_class, sub_class, text, status
+                """
+                select memory_id, main_class, sub_class, text
                 from canonical_memories
-                {where_clause}
                 order by main_class asc, sub_class asc, memory_id asc
                 """
             ).fetchall()
         return [dict(row) for row in rows]
 
     def render_memory_view(self) -> str:
-        return render_memory_markdown(self.list_canonical_memories(active_only=True))
+        return render_memory_markdown(self.list_canonical_memories())
 
     def render_history_view(self) -> str:
         return render_history_markdown(self.list_raw_events())
@@ -458,21 +439,18 @@ class MemoryDatabase:
         main_class: str | None = None,
         sub_class: str | None = None,
         candidate_type: str | None = None,
-        status: str | None = None,
         source_start_idx: int | None = None,
         source_end_idx: int | None = None,
     ) -> None:
         if main_class is not None:
             _validate_main_class(main_class)
-        if status is not None:
-            _validate_status(status)
         conn.execute(
             """
             insert into raw_events(
                 event_id, ts, session_key, history_text, plain_text,
                 main_class, sub_class, candidate_type,
-                status, source_start_idx, source_end_idx
-            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source_start_idx, source_end_idx
+            ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 event_id,
@@ -483,7 +461,6 @@ class MemoryDatabase:
                 main_class,
                 sub_class,
                 candidate_type,
-                status,
                 source_start_idx,
                 source_end_idx,
             ),
@@ -498,22 +475,20 @@ class MemoryDatabase:
         for memory in memories:
             main_class = str(memory["main_class"])
             _validate_main_class(main_class)
-            sub_class = str(memory.get("sub_class") or "")
+            sub_class = str(memory.get("sub_class") or "").strip()
+            _validate_sub_class(sub_class)
             text = str(memory.get("text") or "")
-            status = str(memory.get("status") or "").strip()
-            _validate_status(status)
             conn.execute(
                 """
                 insert into canonical_memories(
-                    memory_id, main_class, sub_class, text, status
-                ) values (?, ?, ?, ?, ?)
+                    memory_id, main_class, sub_class, text
+                ) values (?, ?, ?, ?)
                 """,
                 (
                     str(memory.get("memory_id") or _canonical_memory_id(main_class, sub_class, text)),
                     main_class,
                     sub_class,
                     text,
-                    status,
                 ),
             )
         MemoryDatabase._rebuild_fts(conn)
@@ -522,8 +497,6 @@ class MemoryDatabase:
         self,
         query: str,
         limit: int = 5,
-        *,
-        active_only: bool = True,
     ) -> list[dict[str, Any]]:
         """Retrieve canonical memories with SQLite FTS5."""
         self.initialize()
@@ -533,15 +506,13 @@ class MemoryDatabase:
         fts_query = _build_fts_query(query)
         if not fts_query:
             return []
-        where_clause = "and c.status = 'active'" if active_only else ""
         with self.connect() as conn:
             rows = conn.execute(
-                f"""
-                select c.memory_id, c.main_class, c.sub_class, c.text, c.status
+                """
+                select c.memory_id, c.main_class, c.sub_class, c.text
                 from canonical_fts f
                 join canonical_memories c on c.memory_id = f.memory_id
                 where canonical_fts match ?
-                {where_clause}
                 order by bm25(canonical_fts), c.main_class asc, c.sub_class asc, c.memory_id asc
                 limit ?
                 """,

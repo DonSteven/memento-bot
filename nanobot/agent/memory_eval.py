@@ -65,19 +65,16 @@ _DEFAULT_FIXTURES: dict[str, dict[str, Any]] = {
                     "main_class": "personal_profile",
                     "sub_class": "environment",
                     "text": "User works on Linux.",
-                    "status": "active",
                 },
                 {
                     "main_class": "preferences",
                     "sub_class": "reply_style",
                     "text": "User prefers concise answers.",
-                    "status": "active",
                 },
                 {
                     "main_class": "projects",
                     "sub_class": "active_project",
                     "text": "The active project is nanobot.",
-                    "status": "active",
                 },
             ],
         },
@@ -464,15 +461,10 @@ def _normalize_memory_snapshot(items: list[dict[str, Any]]) -> list[dict[str, st
     for item in items:
         if not isinstance(item, dict):
             continue
-
-        status = str(item.get("status") or "active").strip() or "active"
-        if status != "active":
-            continue
-
         main_class = str(item.get("main_class") or "").strip()
         sub_class = " ".join(str(item.get("sub_class") or "").split())
         text = " ".join(str(item.get("text") or "").split())
-        if not main_class or not text:
+        if not main_class or not sub_class or not text:
             continue
 
         key = (main_class, sub_class, text)
@@ -644,7 +636,7 @@ async def _run_v2_memory_extraction_case(
         memory_text = store.memory_file.read_text(encoding="utf-8") if store.memory_file.exists() else ""
         history_text = store.history_file.read_text(encoding="utf-8") if store.history_file.exists() else ""
         assert store.v2_db is not None
-        predicted_snapshot = store.v2_db.list_canonical_memories(active_only=True)
+        predicted_snapshot = store.v2_db.list_canonical_memories()
 
         return {
             "consolidate_returned_true": result is True,

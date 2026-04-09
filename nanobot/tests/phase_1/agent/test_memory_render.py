@@ -12,7 +12,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from nanobot.agent.memory_db import MemoryDatabase, render_history_markdown, render_memory_markdown
+from nanobot.agent.memory_db import (
+    MemoryDatabase,
+    parse_memory_markdown,
+    render_history_markdown,
+    render_memory_markdown,
+)
 
 
 def _load_fixture(name: str) -> dict:
@@ -50,7 +55,6 @@ def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
             main_class=event.get("main_class"),
             sub_class=event.get("sub_class"),
             candidate_type=event.get("candidate_type"),
-            status=event.get("status"),
         )
     for memory in fixture["canonical_memories"]:
         db.upsert_canonical_memory(
@@ -58,7 +62,6 @@ def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
             main_class=memory["main_class"],
             sub_class=memory.get("sub_class", ""),
             text=memory["text"],
-            status=memory.get("status", "active"),
         )
 
     db.write_views()
@@ -92,6 +95,20 @@ def test_render_memory_markdown_ignores_empty_text_items() -> None:
     assert "- reply_style:" not in rendered
 
 
+def test_render_memory_markdown_ignores_blank_subclass_items() -> None:
+    rendered = render_memory_markdown([
+        {
+            "memory_id": "mem_blank_subclass",
+            "main_class": "preferences",
+            "sub_class": "   ",
+            "text": "User prefers concise answers.",
+        }
+    ])
+
+    assert "## Preferences\n\n(How the user prefers to communicate and collaborate)" in rendered
+    assert "User prefers concise answers." not in rendered
+
+
 def test_render_memory_markdown_sorts_stably_by_subclass_then_memory_id() -> None:
     rendered = render_memory_markdown([
         {
@@ -118,6 +135,24 @@ def test_render_memory_markdown_sorts_stably_by_subclass_then_memory_id() -> Non
     second = rendered.index("- a_style: Second item in same subclass.")
     third = rendered.index("- z_style: Later subclass item.")
     assert first < second < third
+
+
+def test_parse_memory_markdown_ignores_legacy_bullets_without_subclass() -> None:
+    parsed = parse_memory_markdown(
+        "# Long-term Memory\n\n"
+        "## Preferences\n\n"
+        "- User prefers concise answers.\n"
+        "- reply_style: User prefers bullet-point answers.\n"
+    )
+
+    assert parsed == [
+        {
+            "memory_id": parsed[0]["memory_id"],
+            "main_class": "preferences",
+            "sub_class": "reply_style",
+            "text": "User prefers bullet-point answers.",
+        }
+    ]
 
 
 def test_render_history_markdown_filters_empty_entries_and_keeps_order() -> None:

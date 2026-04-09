@@ -3,7 +3,7 @@
 # - verifies raw events and canonical memories can be stored and read back
 # - verifies canonical memory upsert updates an existing record instead of duplicating it
 # - verifies full snapshot replacement can regenerate distinct memory_id values from content
-# - verifies canonical memory reads expose only the active snapshot fields
+# - verifies canonical memory reads expose the simplified snapshot fields
 # How to test:
 # - run this file directly with:
 #   uv run --extra dev pytest -q nanobot/tests/phase_1/agent/test_memory_db.py
@@ -39,14 +39,12 @@ def test_store_and_list_records(tmp_path) -> None:
         main_class="preferences",
         sub_class="reply_style",
         candidate_type="fact",
-        status="active",
     )
     db.upsert_canonical_memory(
         memory_id="mem_1",
         main_class="preferences",
         sub_class="reply_style",
         text="User prefers concise replies.",
-        status="active",
     )
     raw_events = db.list_raw_events()
     memories = db.list_canonical_memories()
@@ -75,10 +73,9 @@ def test_initialize_rejects_legacy_raw_events_schema_with_extracted_json(tmp_pat
                 main_class text,
                 sub_class text,
                 candidate_type text,
-                status text,
-                source_start_idx integer,
-                source_end_idx integer
-            );
+                    source_start_idx integer,
+                    source_end_idx integer
+                );
             """
         )
 
@@ -94,20 +91,29 @@ def test_upsert_canonical_memory_replaces_existing_row(tmp_path) -> None:
         main_class="projects",
         sub_class="active_project",
         text="Active project is alpha.",
-        status="uncertain",
     )
     db.upsert_canonical_memory(
         memory_id="mem_1",
         main_class="projects",
         sub_class="active_project",
         text="Active project is beta.",
-        status="active",
     )
 
     memories = db.list_canonical_memories()
     assert len(memories) == 1
     assert memories[0]["text"] == "Active project is beta."
-    assert memories[0]["status"] == "active"
+
+
+def test_upsert_canonical_memory_rejects_blank_subclass(tmp_path) -> None:
+    db = MemoryDatabase(tmp_path)
+
+    with pytest.raises(ValueError, match="sub_class must be a non-empty string"):
+        db.upsert_canonical_memory(
+            memory_id="mem_1",
+            main_class="projects",
+            sub_class="   ",
+            text="Active project is alpha.",
+        )
 
 
 def test_replace_canonical_snapshot_generates_distinct_ids_per_text(tmp_path) -> None:
@@ -118,13 +124,11 @@ def test_replace_canonical_snapshot_generates_distinct_ids_per_text(tmp_path) ->
             "main_class": "projects",
             "sub_class": "active_project",
             "text": "The active project is nanobot.",
-            "status": "active",
         },
         {
             "main_class": "projects",
             "sub_class": "active_project",
             "text": "The active project is memory-v2-eval.",
-            "status": "active",
         },
     ])
 
@@ -138,7 +142,20 @@ def test_replace_canonical_snapshot_generates_distinct_ids_per_text(tmp_path) ->
     }
 
 
-def test_canonical_memory_reads_return_active_snapshot_fields_only(tmp_path) -> None:
+def test_replace_canonical_snapshot_rejects_blank_subclass(tmp_path) -> None:
+    db = MemoryDatabase(tmp_path)
+
+    with pytest.raises(ValueError, match="sub_class must be a non-empty string"):
+        db.replace_canonical_snapshot([
+            {
+                "main_class": "projects",
+                "sub_class": "",
+                "text": "The active project is nanobot.",
+            }
+        ])
+
+
+def test_canonical_memory_reads_return_snapshot_fields_only(tmp_path) -> None:
     db = MemoryDatabase(tmp_path)
 
     db.upsert_canonical_memory(
@@ -146,20 +163,18 @@ def test_canonical_memory_reads_return_active_snapshot_fields_only(tmp_path) -> 
         main_class="preferences",
         sub_class="reply_style",
         text="User prefers concise replies.",
-        status="active",
     )
 
     listed = db.list_canonical_memories()
     queried = db.query_canonical_memories("concise replies", limit=5)
 
-    expected_keys = {"memory_id", "main_class", "sub_class", "text", "status"}
+    expected_keys = {"memory_id", "main_class", "sub_class", "text"}
     assert listed == [
         {
             "memory_id": "mem_pref",
             "main_class": "preferences",
             "sub_class": "reply_style",
             "text": "User prefers concise replies.",
-            "status": "active",
         }
     ]
     assert set(listed[0]) == expected_keys
@@ -167,7 +182,7 @@ def test_canonical_memory_reads_return_active_snapshot_fields_only(tmp_path) -> 
     assert set(queried[0]) == expected_keys
 
 
-def test_render_and_query_only_expose_active_memories(tmp_path) -> None:
+def test_render_and_query_expose_all_memories(tmp_path) -> None:
     db = MemoryDatabase(tmp_path)
 
     db.replace_canonical_snapshot([
@@ -176,14 +191,12 @@ def test_render_and_query_only_expose_active_memories(tmp_path) -> None:
             "main_class": "preferences",
             "sub_class": "reply_style",
             "text": "User prefers concise replies.",
-            "status": "active",
         },
         {
-            "memory_id": "mem_archived",
+            "memory_id": "mem_verbose",
             "main_class": "preferences",
             "sub_class": "reply_style",
             "text": "User once preferred verbose replies.",
-            "status": "archived",
         },
     ])
 
@@ -191,5 +204,6 @@ def test_render_and_query_only_expose_active_memories(tmp_path) -> None:
     queried = db.query_canonical_memories("verbose", limit=5)
 
     assert "User prefers concise replies." in rendered
-    assert "User once preferred verbose replies." not in rendered
-    assert queried == []
+    assert "User once preferred verbose replies." in rendered
+    assert len(queried) == 1
+    assert queried[0]["text"] == "User once preferred verbose replies."

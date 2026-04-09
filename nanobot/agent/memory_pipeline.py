@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from nanobot.agent.memory_db import MEMORY_STATUSES, MemoryDatabase, _canonical_memory_id
+from nanobot.agent.memory_db import MemoryDatabase, _canonical_memory_id
 
 if TYPE_CHECKING:
     from nanobot.providers.base import LLMProvider
@@ -33,7 +33,9 @@ _SAVE_MEMORY_STRUCTURED_TOOL = [
                     "canonical_memories": {
                         "type": "array",
                         "description": "Full updated long-term memory as structured canonical items. "
-                        "Include all existing facts plus new ones. Remove outdated facts by omitting them.",
+                        "Include all existing facts plus new ones. Remove outdated facts by omitting them. "
+                        "Every memory must include an explicit non-empty subclass; reuse an existing subclass "
+                        "or create a new one when needed.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -50,9 +52,8 @@ _SAVE_MEMORY_STRUCTURED_TOOL = [
                                 },
                                 "sub_class": {"type": "string"},
                                 "text": {"type": "string"},
-                                "status": {"type": "string", "enum": list(MEMORY_STATUSES)},
                             },
-                            "required": ["main_class", "text", "status"],
+                            "required": ["main_class", "sub_class", "text"],
                         },
                     },
                 },
@@ -68,7 +69,6 @@ _TOOL_CHOICE_ERROR_MARKERS = (
     "does not support",
     'should be ["none", "auto"]',
 )
-
 _FTS_CORE_CLASSES = ("personal_profile", "preferences", "constraints")
 
 
@@ -110,9 +110,9 @@ class StructuredMemoryPipeline:
             main_class = str(item.get("main_class") or "")
             sub_class = str(item.get("sub_class") or "").strip()
             text = str(item.get("text") or "").strip()
-            if not text:
+            if not sub_class or not text:
                 continue
-            label = f"{main_class}/{sub_class}" if sub_class else main_class
+            label = f"{main_class}/{sub_class}"
             lines.append(f"- [{label}] {text}")
         return lines
 
@@ -134,7 +134,7 @@ class StructuredMemoryPipeline:
 
         core_items = [
             item
-            for item in self.db.list_canonical_memories(active_only=True)
+            for item in self.db.list_canonical_memories()
             if str(item.get("main_class") or "").strip() in _FTS_CORE_CLASSES
         ]
         retrieved_items: list[dict[str, Any]] = []
@@ -173,7 +173,7 @@ class StructuredMemoryPipeline:
             )
         return "\n".join(lines)
 
-    def _current_memory_view(self) -> str:
+    def _build_consolidation_memory_view(self) -> str:
         if self.db.memory_file.exists():
             return self.db.memory_file.read_text(encoding="utf-8")
         if self.db.db_path.exists():
@@ -190,19 +190,16 @@ class StructuredMemoryPipeline:
                 return []
 
             main_class = str(item.get("main_class") or "").strip()
-            text = _ensure_text(item.get("text", "")).strip()
-            status = str(item.get("status") or "").strip()
-            if not main_class or not text or status not in MEMORY_STATUSES:
-                return []
-
             sub_class = _ensure_text(item.get("sub_class", "")).strip()
+            text = _ensure_text(item.get("text", "")).strip()
+            if not main_class or not sub_class or not text:
+                return []
             memory_id = _canonical_memory_id(main_class, sub_class, text)
             normalized[memory_id] = {
                 "memory_id": memory_id,
                 "main_class": main_class,
                 "sub_class": sub_class,
                 "text": text,
-                "status": status,
             }
 
         return list(normalized.values())
@@ -254,7 +251,7 @@ class StructuredMemoryPipeline:
                 Process this conversation and call the save_memory_structured tool with your consolidation.
                 
                 ## Current Long-term Memory
-                {self._current_memory_view()}
+                {self._build_consolidation_memory_view()}
 
                 ## Conversation to Process
                 {self._format_messages(messages)}
