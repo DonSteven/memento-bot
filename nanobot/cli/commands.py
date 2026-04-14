@@ -1275,6 +1275,101 @@ def memory_eval(
         raise typer.Exit(1)
 
 
+@app.command("memory-v2-eval")
+def memory_v2_eval(
+    level: str = typer.Option("all", "--level", help="Case level: L0, L1, or all"),
+    scenario: str = typer.Option(
+        "all",
+        "--scenario",
+        help="Scenario filter: extraction, overwrite_preservation, or all",
+    ),
+    cases_path: str | None = typer.Option(
+        None,
+        "--cases-path",
+        help="Optional JSON file or directory containing semantic eval fixtures",
+    ),
+    embedding_model: str = typer.Option(
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "--embedding-model",
+        help="SentenceTransformer model used for semantic matching",
+    ),
+    extract_threshold: float = typer.Option(
+        0.80,
+        "--extract-threshold",
+        help="Similarity threshold for extraction cases",
+    ),
+    overwrite_threshold: float = typer.Option(
+        0.88,
+        "--overwrite-threshold",
+        help="Similarity threshold for overwrite-preservation cases",
+    ),
+    output: str = typer.Option("markdown", "--output", "-o", help="Output format: markdown or json"),
+    save_dir: str | None = typer.Option(
+        None,
+        "--save-dir",
+        help="Directory to save the semantic evaluation report",
+    ),
+    judge_model: str | None = typer.Option(
+        None,
+        "--judge-model",
+        help="Judge model used for unmatched-memory equivalence checks; defaults to the main model",
+    ),
+):
+    """Run live v2 semantic memory evaluation against Phase 7 fixtures."""
+    import json
+
+    from nanobot.agent.memory_semantic_eval import (
+        render_memory_v2_semantic_report_markdown,
+        run_memory_v2_semantic_eval,
+        save_memory_v2_semantic_report,
+    )
+
+    normalized_level = level.strip().upper()
+    normalized_scenario = scenario.strip().lower()
+    if normalized_level not in {"L0", "L1", "ALL"}:
+        console.print("[red]Error:[/red] --level must be 'L0', 'L1', or 'all'")
+        raise typer.Exit(1)
+    if normalized_scenario not in {"extraction", "overwrite_preservation", "all"}:
+        console.print(
+            "[red]Error:[/red] --scenario must be 'extraction', 'overwrite_preservation', or 'all'"
+        )
+        raise typer.Exit(1)
+    if output not in {"markdown", "json"}:
+        console.print("[red]Error:[/red] --output must be 'markdown' or 'json'")
+        raise typer.Exit(1)
+
+    runtime_config = _load_runtime_config()
+    provider = _make_provider(runtime_config)
+    model = runtime_config.agents.defaults.model
+    resolved_judge_model = judge_model.strip() if judge_model and judge_model.strip() else model
+
+    report = run_memory_v2_semantic_eval(
+        provider=provider,
+        judge_provider=provider,
+        model=model,
+        judge_model=resolved_judge_model,
+        cases_path=Path(cases_path).expanduser() if cases_path else None,
+        level=normalized_level.lower() if normalized_level == "ALL" else normalized_level,
+        scenario=normalized_scenario,
+        embedding_model=embedding_model,
+        extract_threshold=extract_threshold,
+        overwrite_threshold=overwrite_threshold,
+    )
+
+    if save_dir:
+        saved = save_memory_v2_semantic_report(report, Path(save_dir).expanduser())
+        console.print(f"[green]✓[/green] Saved JSON report to {saved['json']}")
+        console.print(f"[green]✓[/green] Saved Markdown report to {saved['markdown']}")
+        console.print()
+
+    if output == "json":
+        console.print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        console.print(Markdown(render_memory_v2_semantic_report_markdown(report)))
+
+
+
+
 # ============================================================================
 # OAuth Login
 # ============================================================================

@@ -77,6 +77,10 @@ dev = [
     "pytest-cov>=6.0.0,<7.0.0",
     "ruff>=0.1.0",
 ]
+memory_eval = [
+    "sentence-transformers>=3.0.0,<4.0.0",
+    "scipy>=1.13.0,<2.0.0",
+]
 
 [project.scripts]
 nanobot = "nanobot.cli.commands:app"

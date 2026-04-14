@@ -1,0 +1,548 @@
+{
+  "cases": [
+    {
+      "case_id": "l0_extract_profile_environment",
+      "level": "L0",
+      "scenario": "extraction",
+      "notes": "Fresh dialogue should create a single stable personal-profile memory after clarification and distractors.",
+      "prior_snapshot": [],
+      "gold_final_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "gold_preserved_snapshot": [],
+      "conversation": [
+        {
+          "role": "user",
+          "content": "Please remember one practical thing about me. I spend most of my development time on Linux, although I also borrowed a Mac for a screenshot earlier today.",
+          "timestamp": "2026-04-09T10:00:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Understood. I will focus on the durable environment detail rather than the temporary laptop mention.",
+          "timestamp": "2026-04-09T10:00:09"
+        },
+        {
+          "role": "user",
+          "content": "Right, the stable point is that I work on Linux every day. The Mac mention was just for a one-off demo and should not become memory.",
+          "timestamp": "2026-04-09T10:01:00"
+        },
+        {
+          "role": "assistant",
+          "content": "That makes sense. The lasting memory should be your Linux environment.",
+          "timestamp": "2026-04-09T10:01:14"
+        },
+        {
+          "role": "user",
+          "content": "Also ignore that I was rearranging my desk and comparing keyboards. That is just small talk, not long-term context.",
+          "timestamp": "2026-04-09T10:02:00"
+        },
+        {
+          "role": "assistant",
+          "content": "I will treat the desk setup and keyboard comparison as transient conversation only.",
+          "timestamp": "2026-04-09T10:02:13"
+        }
+      ]
+    },
+    {
+      "case_id": "l0_extract_duplicate_subclass_projects",
+      "level": "L0",
+      "scenario": "extraction",
+      "notes": "Two project memories share the same subclass and should both survive after restatement and chatter.",
+      "prior_snapshot": [],
+      "gold_final_snapshot": [
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is nanobot."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is memory-eval."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is nanobot."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is memory-eval."
+        }
+      ],
+      "gold_preserved_snapshot": [],
+      "conversation": [
+        {
+          "role": "user",
+          "content": "I need you to remember two ongoing projects for me: nanobot and memory-eval. I bounced between them all morning.",
+          "timestamp": "2026-04-09T10:03:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Got it. I should keep track of both ongoing projects rather than compress them into one.",
+          "timestamp": "2026-04-09T10:03:15"
+        },
+        {
+          "role": "user",
+          "content": "Exactly. Nanobot is the main codebase, and memory-eval is the separate evaluation stream. They both count as active projects.",
+          "timestamp": "2026-04-09T10:04:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Understood. Both nanobot and memory-eval should persist as active project memories.",
+          "timestamp": "2026-04-09T10:04:16"
+        },
+        {
+          "role": "user",
+          "content": "I also spent ten minutes renaming a spreadsheet tab and cleaning an old folder. Those details should not become memory.",
+          "timestamp": "2026-04-09T10:05:00"
+        },
+        {
+          "role": "assistant",
+          "content": "I will ignore the spreadsheet and folder cleanup as transient activity.",
+          "timestamp": "2026-04-09T10:05:14"
+        }
+      ]
+    },
+    {
+      "case_id": "l0_extract_preference_from_correction",
+      "level": "L0",
+      "scenario": "extraction",
+      "notes": "A vague style preference is corrected over multiple turns; only the corrected final preference belongs in memory.",
+      "prior_snapshot": [],
+      "gold_final_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "reply_style",
+          "text": "User prefers concise bullet-point answers with the decision first."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "reply_style",
+          "text": "User prefers concise bullet-point answers with the decision first."
+        }
+      ],
+      "gold_preserved_snapshot": [],
+      "conversation": [
+        {
+          "role": "user",
+          "content": "I want answers to be brief, but let me phrase that more carefully because 'brief' by itself is too vague.",
+          "timestamp": "2026-04-09T10:06:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Sure. I will wait for the more specific version instead of locking onto the vague wording.",
+          "timestamp": "2026-04-09T10:06:12"
+        },
+        {
+          "role": "user",
+          "content": "The real preference is concise bullet-point answers with the decision first. I do not mean one-line replies or missing detail; I just want the answer structured that way.",
+          "timestamp": "2026-04-09T10:07:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Understood. The durable preference is concise bullet points with the decision first.",
+          "timestamp": "2026-04-09T10:07:15"
+        },
+        {
+          "role": "user",
+          "content": "Ignore that I was experimenting with emoji reactions in another chat. That is unrelated and not a preference I want stored.",
+          "timestamp": "2026-04-09T10:08:00"
+        },
+        {
+          "role": "assistant",
+          "content": "I will ignore the emoji experiment and keep only the clarified reply-style preference.",
+          "timestamp": "2026-04-09T10:08:13"
+        }
+      ]
+    },
+    {
+      "case_id": "l0_extract_daily_life_routine",
+      "level": "L0",
+      "scenario": "extraction",
+      "notes": "A durable daily routine is clarified over multiple turns and should be stored as daily_life memory.",
+      "prior_snapshot": [],
+      "gold_final_snapshot": [
+        {
+          "main_class": "daily_life",
+          "sub_class": "exercise_routine",
+          "text": "User goes for a morning run most weekdays."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "daily_life",
+          "sub_class": "exercise_routine",
+          "text": "User goes for a morning run most weekdays."
+        }
+      ],
+      "gold_preserved_snapshot": [],
+      "conversation": [
+        {
+          "role": "user",
+          "content": "One personal routine might be useful to remember, but let me state it carefully so it does not sound like a one-off event.",
+          "timestamp": "2026-04-09T10:08:30"
+        },
+        {
+          "role": "assistant",
+          "content": "Sure. I will wait for the stable version rather than assuming it from a single casual mention.",
+          "timestamp": "2026-04-09T10:08:42"
+        },
+        {
+          "role": "user",
+          "content": "The durable fact is that I go for a morning run most weekdays. I skipped today because of rain, but the usual routine is the morning run.",
+          "timestamp": "2026-04-09T10:09:20"
+        },
+        {
+          "role": "assistant",
+          "content": "Understood. The stable daily-life memory is your usual morning run routine, not the one rainy exception.",
+          "timestamp": "2026-04-09T10:09:35"
+        },
+        {
+          "role": "user",
+          "content": "Ignore that I also compared shoe brands and talked about breakfast today. Those are transient details around the routine.",
+          "timestamp": "2026-04-09T10:10:10"
+        },
+        {
+          "role": "assistant",
+          "content": "I will keep the routine itself and ignore the shoe and breakfast chatter.",
+          "timestamp": "2026-04-09T10:10:24"
+        }
+      ]
+    },
+    {
+      "case_id": "l0_overwrite_update_and_preserve_constraint",
+      "level": "L0",
+      "scenario": "overwrite_preservation",
+      "notes": "Preference should update, while unrelated git constraint remains untouched through explicit overwrite guidance.",
+      "prior_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "reply_style",
+          "text": "User prefers concise answers."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        }
+      ],
+      "gold_final_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "reply_style",
+          "text": "User prefers concise bullet-point answers."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "reply_style",
+          "text": "User prefers concise bullet-point answers."
+        }
+      ],
+      "gold_preserved_snapshot": [
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        }
+      ],
+      "conversation": [
+        {
+          "role": "user",
+          "content": "I want to update one thing only: change my answer style preference from concise answers to concise bullet-point answers.",
+          "timestamp": "2026-04-09T10:09:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Understood. I should update the preference and avoid touching unrelated memories.",
+          "timestamp": "2026-04-09T10:09:15"
+        },
+        {
+          "role": "user",
+          "content": "Yes, and specifically keep my tooling rule about avoiding interactive git commands. That old constraint still stands exactly as before.",
+          "timestamp": "2026-04-09T10:10:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Clear. Only the reply-style memory changes; the git constraint remains unchanged.",
+          "timestamp": "2026-04-09T10:10:13"
+        },
+        {
+          "role": "user",
+          "content": "Ignore the fact that I also reorganized a bookmarks folder just now. That should not become memory.",
+          "timestamp": "2026-04-09T10:11:00"
+        },
+        {
+          "role": "assistant",
+          "content": "I will ignore the bookmarks cleanup and preserve only the intended long-term items.",
+          "timestamp": "2026-04-09T10:11:11"
+        }
+      ]
+    },
+    {
+      "case_id": "l0_overwrite_remove_stale_but_preserve_profile",
+      "level": "L0",
+      "scenario": "overwrite_preservation",
+      "notes": "A stale temporary plan is removed while stable profile memory is reaffirmed across multiple turns.",
+      "prior_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        },
+        {
+          "main_class": "plans_commitments",
+          "sub_class": "trip",
+          "text": "User plans to fly to Berlin next week."
+        }
+      ],
+      "gold_final_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "gold_extracted_snapshot": [],
+      "gold_preserved_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "conversation": [
+        {
+          "role": "user",
+          "content": "The Berlin trip is off, so that old travel plan should not stay in long-term memory anymore.",
+          "timestamp": "2026-04-09T10:12:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Understood. The stale trip plan should be removed.",
+          "timestamp": "2026-04-09T10:12:12"
+        },
+        {
+          "role": "user",
+          "content": "At the same time, do not touch my Linux environment memory. That background fact is still valid and unrelated to the canceled trip.",
+          "timestamp": "2026-04-09T10:13:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Clear. I should preserve the Linux profile memory while dropping only the trip plan.",
+          "timestamp": "2026-04-09T10:13:14"
+        },
+        {
+          "role": "user",
+          "content": "I also talked about lunch plans and a delayed package today, but those are not durable memories either.",
+          "timestamp": "2026-04-09T10:14:00"
+        },
+        {
+          "role": "assistant",
+          "content": "I will treat the lunch and package discussion as transient context only.",
+          "timestamp": "2026-04-09T10:14:13"
+        }
+      ]
+    },
+    {
+      "case_id": "l0_overwrite_multi_preserve_with_new_fact",
+      "level": "L0",
+      "scenario": "overwrite_preservation",
+      "notes": "One target project memory updates, two unrelated memories stay, and one new fact is added in the same case.",
+      "prior_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the legacy replay checklist."
+        }
+      ],
+      "gold_final_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the semantic memory fixture expansion."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "status_updates",
+          "text": "User prefers short daily status updates."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the semantic memory fixture expansion."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "status_updates",
+          "text": "User prefers short daily status updates."
+        }
+      ],
+      "gold_preserved_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        }
+      ],
+      "conversation": [
+        {
+          "role": "user",
+          "content": "Please replace my old project memory. The legacy replay checklist is no longer active; the active project is now the semantic memory fixture expansion.",
+          "timestamp": "2026-04-09T10:15:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Understood. I should swap the active project and leave unrelated memories alone.",
+          "timestamp": "2026-04-09T10:15:14"
+        },
+        {
+          "role": "user",
+          "content": "Also add one new stable preference: I like short daily status updates. But keep my Linux environment and non-interactive git constraint exactly as they are.",
+          "timestamp": "2026-04-09T10:16:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Clear. Add the new status-update preference, update the project, and preserve the Linux and git memories.",
+          "timestamp": "2026-04-09T10:16:17"
+        },
+        {
+          "role": "user",
+          "content": "Ignore the fact that I was briefly comparing note-taking apps. That was just transient context.",
+          "timestamp": "2026-04-09T10:17:00"
+        },
+        {
+          "role": "assistant",
+          "content": "I will ignore the note-taking app comparison and keep only the intended durable changes.",
+          "timestamp": "2026-04-09T10:17:13"
+        }
+      ]
+    },
+    {
+      "case_id": "l0_overwrite_update_daily_life_preserve_unrelated",
+      "level": "L0",
+      "scenario": "overwrite_preservation",
+      "notes": "A stale daily-life routine is updated while unrelated preserved memory remains unchanged.",
+      "prior_snapshot": [
+        {
+          "main_class": "daily_life",
+          "sub_class": "exercise_routine",
+          "text": "User goes to an evening yoga class every weekday."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        }
+      ],
+      "gold_final_snapshot": [
+        {
+          "main_class": "daily_life",
+          "sub_class": "exercise_routine",
+          "text": "User goes for a morning run most weekdays."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "daily_life",
+          "sub_class": "exercise_routine",
+          "text": "User goes for a morning run most weekdays."
+        }
+      ],
+      "gold_preserved_snapshot": [
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        }
+      ],
+      "conversation": [
+        {
+          "role": "user",
+          "content": "One routine changed and only that routine changed: I no longer do weekday evening yoga as my main habit. The stable routine now is a morning run most weekdays.",
+          "timestamp": "2026-04-09T10:18:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Understood. I should update the daily-life routine and avoid touching unrelated memories.",
+          "timestamp": "2026-04-09T10:18:15"
+        },
+        {
+          "role": "user",
+          "content": "Exactly. Keep my rule about avoiding interactive git commands exactly as it is. Only the daily routine changed.",
+          "timestamp": "2026-04-09T10:19:00"
+        },
+        {
+          "role": "assistant",
+          "content": "Clear. Preserve the tooling constraint, update only the daily-life routine.",
+          "timestamp": "2026-04-09T10:19:14"
+        },
+        {
+          "role": "user",
+          "content": "Ignore the fact that I also compared workout playlists and bought new socks. Those are side details, not the durable routine.",
+          "timestamp": "2026-04-09T10:20:00"
+        },
+        {
+          "role": "assistant",
+          "content": "I will ignore the playlist and shopping details and keep only the updated routine.",
+          "timestamp": "2026-04-09T10:20:13"
+        }
+      ]
+    }
+  ]
+}

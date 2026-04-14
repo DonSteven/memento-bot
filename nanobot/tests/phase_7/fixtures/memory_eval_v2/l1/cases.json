@@ -1,0 +1,808 @@
+{
+  "cases": [
+    {
+      "case_id": "l1_extraction_mixed_dialogue_preferences_and_project",
+      "level": "L1",
+      "scenario": "extraction",
+      "notes": "Long mixed conversation with distractors, callbacks, and late clarification should still extract one preference and one project.",
+      "prior_snapshot": [],
+      "gold_final_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "work_style",
+          "text": "User prefers weekly checkpoint summaries with open risks first."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the v2 memory evaluation rollout."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "work_style",
+          "text": "User prefers weekly checkpoint summaries with open risks first."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the v2 memory evaluation rollout."
+        }
+      ],
+      "gold_preserved_snapshot": [],
+      "conversation": [
+        {"role": "user", "content": "This week my active project is the v2 memory evaluation rollout. The rest of today's notes are mostly setup noise.", "timestamp": "2026-04-09T11:00:00"},
+        {"role": "assistant", "content": "Understood. I will separate the stable project fact from the setup chatter.", "timestamp": "2026-04-09T11:00:15"},
+        {"role": "user", "content": "I spent the morning triaging old TODO lists, checking migration notes, and renaming draft sections. Those details should not become long-term memory.", "timestamp": "2026-04-09T11:01:00"},
+        {"role": "assistant", "content": "I will treat the TODO triage and renaming work as transient.", "timestamp": "2026-04-09T11:01:15"},
+        {"role": "user", "content": "A durable preference did come up. Weekly checkpoint summaries should start with open risks before status details.", "timestamp": "2026-04-09T11:02:00"},
+        {"role": "assistant", "content": "That sounds like a stable work-style preference: risks first, status second.", "timestamp": "2026-04-09T11:02:15"},
+        {"role": "user", "content": "I also copied meeting notes about staffing, room bookings, and incident reviews. Those are just distractors for this case.", "timestamp": "2026-04-09T11:03:00"},
+        {"role": "assistant", "content": "Understood. Meeting logistics and incident notes stay out of long-term memory here.", "timestamp": "2026-04-09T11:03:15"},
+        {"role": "user", "content": "I compared embeddings libraries and talked about report formatting. That is important for today's work but not a durable memory on its own.", "timestamp": "2026-04-09T11:04:00"},
+        {"role": "assistant", "content": "I will keep that as temporary context only.", "timestamp": "2026-04-09T11:04:15"},
+        {"role": "user", "content": "Clarification: by risks first, I mean the summary ordering. I still want the weekly checkpoint concise overall.", "timestamp": "2026-04-09T11:05:00"},
+        {"role": "assistant", "content": "Clear. The durable preference is specifically the ordering, not an instruction to remove detail.", "timestamp": "2026-04-09T11:05:15"},
+        {"role": "user", "content": "The project is still the v2 memory evaluation rollout, not some generic memory refactor.", "timestamp": "2026-04-09T11:06:00"},
+        {"role": "assistant", "content": "I will keep the project phrasing specific.", "timestamp": "2026-04-09T11:06:15"},
+        {"role": "user", "content": "I pasted dashboard ideas and presentation polish notes too. Those should not expand the memory set.", "timestamp": "2026-04-09T11:07:00"},
+        {"role": "assistant", "content": "Got it. Dashboard and presentation notes are transient.", "timestamp": "2026-04-09T11:07:15"},
+        {"role": "user", "content": "Another distraction: I debated command naming between semantic-eval and memory-v2-eval. That naming discussion is not durable memory.", "timestamp": "2026-04-09T11:08:00"},
+        {"role": "assistant", "content": "I will not store the command-name debate.", "timestamp": "2026-04-09T11:08:15"},
+        {"role": "user", "content": "Please keep in mind that the weekly checkpoint preference is not limited to this one report draft. It is how I want that recurring summary structured.", "timestamp": "2026-04-09T11:09:00"},
+        {"role": "assistant", "content": "That reinforces it as a durable preference rather than a one-off instruction.", "timestamp": "2026-04-09T11:09:15"},
+        {"role": "user", "content": "I also reviewed an unrelated channel-delivery bug. That issue does not belong in memory for this evaluation case.", "timestamp": "2026-04-09T11:10:00"},
+        {"role": "assistant", "content": "Understood. The bug review stays out of long-term memory.", "timestamp": "2026-04-09T11:10:15"},
+        {"role": "user", "content": "Restating the stable pair so far: project is the v2 memory evaluation rollout, and weekly checkpoints should surface open risks first.", "timestamp": "2026-04-09T11:11:00"},
+        {"role": "assistant", "content": "I have the pair and will keep it compact.", "timestamp": "2026-04-09T11:11:15"},
+        {"role": "user", "content": "I spent a while rewriting a benchmark spreadsheet. That work matters today but should not become memory.", "timestamp": "2026-04-09T11:12:00"},
+        {"role": "assistant", "content": "The benchmark spreadsheet work will remain transient.", "timestamp": "2026-04-09T11:12:15"},
+        {"role": "user", "content": "Another clarification: risks first does not mean pessimistic summaries. It just means the unresolved issues appear before the routine status block.", "timestamp": "2026-04-09T11:13:00"},
+        {"role": "assistant", "content": "Clear. The meaning is ordering, not tone.", "timestamp": "2026-04-09T11:13:15"},
+        {"role": "user", "content": "I also copied a list of presentation screenshots and headings. Those are pure distractors.", "timestamp": "2026-04-09T11:14:00"},
+        {"role": "assistant", "content": "I will ignore the screenshot and heading list.", "timestamp": "2026-04-09T11:14:15"},
+        {"role": "user", "content": "The active project remains the v2 memory evaluation rollout even if I mention side tasks around it.", "timestamp": "2026-04-09T11:15:00"},
+        {"role": "assistant", "content": "Understood. Side tasks do not replace the main project memory.", "timestamp": "2026-04-09T11:15:15"},
+        {"role": "user", "content": "I also discussed whether to add docs, but that should not become a separate memory.", "timestamp": "2026-04-09T11:16:00"},
+        {"role": "assistant", "content": "I will not promote the docs discussion into memory.", "timestamp": "2026-04-09T11:16:15"},
+        {"role": "user", "content": "Weekly checkpoint summaries with open risks first is the exact wording I want to anchor.", "timestamp": "2026-04-09T11:17:00"},
+        {"role": "assistant", "content": "That wording is clear and stable.", "timestamp": "2026-04-09T11:17:15"},
+        {"role": "user", "content": "I then reorganized some examples and cleaned a folder. Again, not long-term memory.", "timestamp": "2026-04-09T11:18:00"},
+        {"role": "assistant", "content": "Folder cleanup and example shuffling stay out of memory.", "timestamp": "2026-04-09T11:18:15"},
+        {"role": "user", "content": "The same two durable items still hold after all that noise.", "timestamp": "2026-04-09T11:19:00"},
+        {"role": "assistant", "content": "I am still tracking the same two items only.", "timestamp": "2026-04-09T11:19:15"},
+        {"role": "user", "content": "Recap one: project equals the v2 memory evaluation rollout.", "timestamp": "2026-04-09T11:20:00"},
+        {"role": "assistant", "content": "Recap noted.", "timestamp": "2026-04-09T11:20:15"},
+        {"role": "user", "content": "Recap two: weekly checkpoint summaries should start with open risks before status details.", "timestamp": "2026-04-09T11:21:00"},
+        {"role": "assistant", "content": "Recap noted. I will keep the preference specific.", "timestamp": "2026-04-09T11:21:15"},
+        {"role": "user", "content": "Ignore everything else: staffing notes, room bookings, dashboard drafts, screenshots, and command-name debates.", "timestamp": "2026-04-09T11:22:00"},
+        {"role": "assistant", "content": "Understood. Those remain excluded from memory.", "timestamp": "2026-04-09T11:22:15"},
+        {"role": "user", "content": "Final restatement: active project is the v2 memory evaluation rollout, and weekly checkpoints should present open risks first.", "timestamp": "2026-04-09T11:23:00"},
+        {"role": "assistant", "content": "I have the final stable set and will not broaden it with the surrounding noise.", "timestamp": "2026-04-09T11:23:15"},
+        {"role": "user", "content": "One last callback before we close: the recurring summary preference is still weekly checkpoints with open risks first, and the project is still the v2 memory evaluation rollout.", "timestamp": "2026-04-09T11:24:00"},
+        {"role": "assistant", "content": "Understood. The same two durable items remain, and the surrounding formatting chatter stays excluded.", "timestamp": "2026-04-09T11:24:15"}
+      ]
+    },
+    {
+      "case_id": "l1_extraction_multi_memory_cross_topic",
+      "level": "L1",
+      "scenario": "extraction",
+      "notes": "Long mixed conversation yields stable memories across multiple main_class buckets, including a durable tooling constraint.",
+      "prior_snapshot": [],
+      "gold_final_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "review_style",
+          "text": "User prefers findings-first code reviews."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the fixture expansion for semantic memory evaluation."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "review_style",
+          "text": "User prefers findings-first code reviews."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the fixture expansion for semantic memory evaluation."
+        }
+      ],
+      "gold_preserved_snapshot": [],
+      "conversation": [
+        {"role": "user", "content": "My active project is the fixture expansion for semantic memory evaluation. I spent the morning auditing old cases and coverage gaps.", "timestamp": "2026-04-09T11:24:00"},
+        {"role": "assistant", "content": "Understood. I will keep the project fact and treat the audit details as transient unless you promote them.", "timestamp": "2026-04-09T11:24:15"},
+        {"role": "user", "content": "A stable preference also applies here: in code review, I want findings first and any summary after that.", "timestamp": "2026-04-09T11:25:00"},
+        {"role": "assistant", "content": "That sounds like a durable review-style preference.", "timestamp": "2026-04-09T11:25:15"},
+        {"role": "user", "content": "Another durable rule: avoid interactive git commands. I want that treated as a lasting tooling constraint.", "timestamp": "2026-04-09T11:26:00"},
+        {"role": "assistant", "content": "Got it. The non-interactive git rule is a stable constraint.", "timestamp": "2026-04-09T11:26:15"},
+        {"role": "user", "content": "And one stable background fact is that I work on Linux. That is not new, but it is valid in this conversation.", "timestamp": "2026-04-09T11:27:00"},
+        {"role": "assistant", "content": "Understood. Linux is a durable profile fact.", "timestamp": "2026-04-09T11:27:15"},
+        {"role": "user", "content": "The rest is clutter: lunch notes, room-booking chatter, dashboard colors, and example branch names.", "timestamp": "2026-04-09T11:28:00"},
+        {"role": "assistant", "content": "I will keep the clutter out of memory.", "timestamp": "2026-04-09T11:28:15"},
+        {"role": "user", "content": "The project remains the fixture expansion for semantic memory evaluation even if I mention side tasks around it.", "timestamp": "2026-04-09T11:29:00"},
+        {"role": "assistant", "content": "Project memory remains specific and unchanged.", "timestamp": "2026-04-09T11:29:15"},
+        {"role": "user", "content": "Findings-first code reviews is not a one-off instruction for today's thread. It is how I want reviews in general.", "timestamp": "2026-04-09T11:30:00"},
+        {"role": "assistant", "content": "That confirms it as a stable preference.", "timestamp": "2026-04-09T11:30:15"},
+        {"role": "user", "content": "Avoid interactive git commands also applies generally, not just in this repository.", "timestamp": "2026-04-09T11:31:00"},
+        {"role": "assistant", "content": "Understood. The constraint is broad and durable.", "timestamp": "2026-04-09T11:31:15"},
+        {"role": "user", "content": "I also talked about benchmark formatting and report headers. Those are temporary and should not become memories.", "timestamp": "2026-04-09T11:32:00"},
+        {"role": "assistant", "content": "I will exclude the formatting and header chatter.", "timestamp": "2026-04-09T11:32:15"},
+        {"role": "user", "content": "The Linux environment fact is still relevant and should remain distinct from the project and preference memories.", "timestamp": "2026-04-09T11:33:00"},
+        {"role": "assistant", "content": "Clear. Profile, preference, constraint, and project should stay separate.", "timestamp": "2026-04-09T11:33:15"},
+        {"role": "user", "content": "I pasted some ad hoc examples and a temporary branch name. Those should not leak into memory.", "timestamp": "2026-04-09T11:34:00"},
+        {"role": "assistant", "content": "I will ignore the ad hoc examples and temporary branch name.", "timestamp": "2026-04-09T11:34:15"},
+        {"role": "user", "content": "Recap: Linux environment, findings-first reviews, avoid interactive git, and the fixture expansion project.", "timestamp": "2026-04-09T11:35:00"},
+        {"role": "assistant", "content": "I have the four-item set.", "timestamp": "2026-04-09T11:35:15"},
+        {"role": "user", "content": "More noise: meeting reschedules, presentation polish, and one bug triage thread.", "timestamp": "2026-04-09T11:36:00"},
+        {"role": "assistant", "content": "Those remain transient.", "timestamp": "2026-04-09T11:36:15"},
+        {"role": "user", "content": "Please do not compress the four-item set into one vague sentence. Each item should stand on its own.", "timestamp": "2026-04-09T11:37:00"},
+        {"role": "assistant", "content": "Understood. The memories should remain distinct.", "timestamp": "2026-04-09T11:37:15"},
+        {"role": "user", "content": "The active project is still the fixture expansion for semantic memory evaluation.", "timestamp": "2026-04-09T11:38:00"},
+        {"role": "assistant", "content": "Project callback noted.", "timestamp": "2026-04-09T11:38:15"},
+        {"role": "user", "content": "The review preference is still findings first.", "timestamp": "2026-04-09T11:39:00"},
+        {"role": "assistant", "content": "Preference callback noted.", "timestamp": "2026-04-09T11:39:15"},
+        {"role": "user", "content": "The tooling constraint is still to avoid interactive git commands.", "timestamp": "2026-04-09T11:40:00"},
+        {"role": "assistant", "content": "Constraint callback noted.", "timestamp": "2026-04-09T11:40:15"},
+        {"role": "user", "content": "The profile fact is still that I work on Linux.", "timestamp": "2026-04-09T11:41:00"},
+        {"role": "assistant", "content": "Profile callback noted.", "timestamp": "2026-04-09T11:41:15"},
+        {"role": "user", "content": "Ignore the rest: lunch notes, dashboard colors, report headers, temporary examples, and branch names.", "timestamp": "2026-04-09T11:42:00"},
+        {"role": "assistant", "content": "Understood. I will exclude the surrounding noise.", "timestamp": "2026-04-09T11:42:15"},
+        {"role": "user", "content": "Final recap: Linux, findings-first reviews, avoid interactive git, and the fixture expansion project.", "timestamp": "2026-04-09T11:43:00"},
+        {"role": "assistant", "content": "I have the final durable set and will not add anything else.", "timestamp": "2026-04-09T11:43:15"},
+        {"role": "user", "content": "One more noisy batch: spreadsheet styling, slide screenshots, and branch labels. None of that should enter memory.", "timestamp": "2026-04-09T11:44:00"},
+        {"role": "assistant", "content": "Understood. I will keep the extra formatting chatter out of long-term memory.", "timestamp": "2026-04-09T11:44:15"},
+        {"role": "user", "content": "Callback on project: the active project is still the fixture expansion for semantic memory evaluation.", "timestamp": "2026-04-09T11:45:00"},
+        {"role": "assistant", "content": "Project callback noted. The active project remains unchanged.", "timestamp": "2026-04-09T11:45:15"},
+        {"role": "user", "content": "Callback on preference and constraint together: reviews stay findings first, and I still want interactive git avoided.", "timestamp": "2026-04-09T11:46:00"},
+        {"role": "assistant", "content": "Understood. The review preference and tooling constraint still stand.", "timestamp": "2026-04-09T11:46:15"},
+        {"role": "user", "content": "Callback on profile: I still work on Linux, and that should stay separate from the project memory.", "timestamp": "2026-04-09T11:47:00"},
+        {"role": "assistant", "content": "Clear. The Linux profile fact remains distinct.", "timestamp": "2026-04-09T11:47:15"},
+        {"role": "user", "content": "Closing recap: Linux, findings-first reviews, avoid interactive git commands, and the fixture expansion project. Nothing else.", "timestamp": "2026-04-09T11:48:00"},
+        {"role": "assistant", "content": "I have the closing four-item set and will not add anything from the surrounding noise.", "timestamp": "2026-04-09T11:48:15"}
+      ]
+    },
+    {
+      "case_id": "l1_extraction_false_signal_resistance",
+      "level": "L1",
+      "scenario": "extraction",
+      "notes": "Noisy dialogue repeats many transient details, but only two durable facts belong in gold.",
+      "prior_snapshot": [],
+      "gold_final_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "status_updates",
+          "text": "User prefers short daily status updates."
+        },
+        {
+          "main_class": "plans_commitments",
+          "sub_class": "deadline",
+          "text": "User plans to finish the phase 7 fixture pass this week."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "status_updates",
+          "text": "User prefers short daily status updates."
+        },
+        {
+          "main_class": "plans_commitments",
+          "sub_class": "deadline",
+          "text": "User plans to finish the phase 7 fixture pass this week."
+        }
+      ],
+      "gold_preserved_snapshot": [],
+      "conversation": [
+        {"role": "user", "content": "Today was noisy: five docs, three terminals, a spreadsheet, and a naming thread. One durable point is that I prefer short daily status updates.", "timestamp": "2026-04-09T11:44:00"},
+        {"role": "assistant", "content": "Understood. The short daily status update preference sounds durable.", "timestamp": "2026-04-09T11:44:15"},
+        {"role": "user", "content": "Another durable point is that I plan to finish the phase 7 fixture pass this week.", "timestamp": "2026-04-09T11:45:00"},
+        {"role": "assistant", "content": "Got it. That sounds like a real commitment.", "timestamp": "2026-04-09T11:45:15"},
+        {"role": "user", "content": "Now the noise: screenshots, dashboards, branch cleanup, rollout notes, and synthetic profile examples.", "timestamp": "2026-04-09T11:46:00"},
+        {"role": "assistant", "content": "I will treat those as transient.", "timestamp": "2026-04-09T11:46:15"},
+        {"role": "user", "content": "Clarification: the short-update preference applies to daily status check-ins. It does not mean every explanation must be tiny.", "timestamp": "2026-04-09T11:47:00"},
+        {"role": "assistant", "content": "Clear. The preference is narrow and specific to status updates.", "timestamp": "2026-04-09T11:47:15"},
+        {"role": "user", "content": "I also compared tabs, renamed an option, and drafted report headings. None of that belongs in memory.", "timestamp": "2026-04-09T11:48:00"},
+        {"role": "assistant", "content": "Understood. I will ignore the tabs, option naming, and report headings.", "timestamp": "2026-04-09T11:48:15"},
+        {"role": "user", "content": "The weekly commitment is specifically to finish the phase 7 fixture pass this week.", "timestamp": "2026-04-09T11:49:00"},
+        {"role": "assistant", "content": "Commitment phrasing noted.", "timestamp": "2026-04-09T11:49:15"},
+        {"role": "user", "content": "More noise: lunch planning, travel thoughts, and a list of example user profiles.", "timestamp": "2026-04-09T11:50:00"},
+        {"role": "assistant", "content": "Those are distractions and will stay out of memory.", "timestamp": "2026-04-09T11:50:15"},
+        {"role": "user", "content": "Another clarification: by short updates I mean compact check-ins, not vague updates with no substance.", "timestamp": "2026-04-09T11:51:00"},
+        {"role": "assistant", "content": "Understood. The preference is compact but still substantive status updates.", "timestamp": "2026-04-09T11:51:15"},
+        {"role": "user", "content": "I also copied bug triage notes and report screenshots. Those should not become new memories.", "timestamp": "2026-04-09T11:52:00"},
+        {"role": "assistant", "content": "I will not store the bug triage notes or screenshots.", "timestamp": "2026-04-09T11:52:15"},
+        {"role": "user", "content": "The durable set is still only two items so far.", "timestamp": "2026-04-09T11:53:00"},
+        {"role": "assistant", "content": "I am still tracking only two durable items.", "timestamp": "2026-04-09T11:53:15"},
+        {"role": "user", "content": "One is the short daily status update preference.", "timestamp": "2026-04-09T11:54:00"},
+        {"role": "assistant", "content": "Preference callback noted.", "timestamp": "2026-04-09T11:54:15"},
+        {"role": "user", "content": "The other is the plan to finish the phase 7 fixture pass this week.", "timestamp": "2026-04-09T11:55:00"},
+        {"role": "assistant", "content": "Commitment callback noted.", "timestamp": "2026-04-09T11:55:15"},
+        {"role": "user", "content": "Ignore another batch of noise: benchmark edits, dashboard colors, command names, and e-mail snippets.", "timestamp": "2026-04-09T11:56:00"},
+        {"role": "assistant", "content": "I will ignore that batch of noise too.", "timestamp": "2026-04-09T11:56:15"},
+        {"role": "user", "content": "The short-update preference is not a global communication style memory. Keep it scoped to daily status updates.", "timestamp": "2026-04-09T11:57:00"},
+        {"role": "assistant", "content": "Scope noted. I will keep it narrow.", "timestamp": "2026-04-09T11:57:15"},
+        {"role": "user", "content": "I also thought about lunch and travel later, which should remain excluded.", "timestamp": "2026-04-09T11:58:00"},
+        {"role": "assistant", "content": "Lunch and travel remain excluded.", "timestamp": "2026-04-09T11:58:15"},
+        {"role": "user", "content": "Recap: compact daily check-ins and the plan to finish the fixture pass this week.", "timestamp": "2026-04-09T11:59:00"},
+        {"role": "assistant", "content": "Recap noted.", "timestamp": "2026-04-09T11:59:15"},
+        {"role": "user", "content": "Still no other durable items beyond those two.", "timestamp": "2026-04-09T12:00:00"},
+        {"role": "assistant", "content": "Understood. The set remains intentionally small.", "timestamp": "2026-04-09T12:00:15"},
+        {"role": "user", "content": "Final recap: short daily status updates, and finish the phase 7 fixture pass this week.", "timestamp": "2026-04-09T12:01:00"},
+        {"role": "assistant", "content": "I have the final pair and will not add extra noise.", "timestamp": "2026-04-09T12:01:15"},
+        {"role": "user", "content": "Another noisy batch: hallway chatter, a package delivery note, and a template rename. Those all stay out of memory.", "timestamp": "2026-04-09T12:02:00"},
+        {"role": "assistant", "content": "Understood. I will keep that noisy batch transient too.", "timestamp": "2026-04-09T12:02:15"},
+        {"role": "user", "content": "Callback on the commitment: I still plan to finish the phase 7 fixture pass this week.", "timestamp": "2026-04-09T12:03:00"},
+        {"role": "assistant", "content": "Commitment callback noted. The same deadline still applies.", "timestamp": "2026-04-09T12:03:15"},
+        {"role": "user", "content": "Callback on the preference: I still want daily status updates to stay short and compact.", "timestamp": "2026-04-09T12:04:00"},
+        {"role": "assistant", "content": "Preference callback noted. I will keep it scoped to daily status updates.", "timestamp": "2026-04-09T12:04:15"},
+        {"role": "user", "content": "Please do not turn branch naming, screenshot cleanup, or dashboard tweaks into memory. Those are just temporary notes.", "timestamp": "2026-04-09T12:05:00"},
+        {"role": "assistant", "content": "Understood. Those temporary notes remain excluded.", "timestamp": "2026-04-09T12:05:15"},
+        {"role": "user", "content": "Another clarification: the this-week commitment is specifically the phase 7 fixture pass, not some broader roadmap promise.", "timestamp": "2026-04-09T12:06:00"},
+        {"role": "assistant", "content": "Clear. I will keep the commitment narrow and specific.", "timestamp": "2026-04-09T12:06:15"},
+        {"role": "user", "content": "Closing recap: only two durable items still apply here, the short daily status update preference and the plan to finish the phase 7 fixture pass this week.", "timestamp": "2026-04-09T12:07:00"},
+        {"role": "assistant", "content": "Closing recap noted. I will preserve the same two items only.", "timestamp": "2026-04-09T12:07:15"},
+        {"role": "user", "content": "Final boundary statement: there is still no third durable memory hiding in the noise.", "timestamp": "2026-04-09T12:08:00"},
+        {"role": "assistant", "content": "Understood. The durable set remains exactly two items.", "timestamp": "2026-04-09T12:08:15"}
+      ]
+    },
+    {
+      "case_id": "l1_extraction_daily_life_with_noise",
+      "level": "L1",
+      "scenario": "extraction",
+      "notes": "A long noisy conversation contains one durable daily-life routine and one narrow reading-format preference that are clarified late and should be extracted.",
+      "prior_snapshot": [],
+      "gold_final_snapshot": [
+        {
+          "main_class": "daily_life",
+          "sub_class": "reading_routine",
+          "text": "User reads fiction for half an hour before bed most nights."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "reading_recommendations",
+          "text": "User prefers fiction recommendations to stay spoiler-free."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "daily_life",
+          "sub_class": "reading_routine",
+          "text": "User reads fiction for half an hour before bed most nights."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "reading_recommendations",
+          "text": "User prefers fiction recommendations to stay spoiler-free."
+        }
+      ],
+      "gold_preserved_snapshot": [],
+      "conversation": [
+        {"role": "user", "content": "I had a noisy day with bug triage, terminal cleanup, fixture edits, and report-formatting debates. One personal routine does matter here, but I want to explain it carefully.", "timestamp": "2026-04-09T12:02:00"},
+        {"role": "assistant", "content": "Sure. I will wait for the stable routine rather than guessing it from the noisy context.", "timestamp": "2026-04-09T12:02:15"},
+        {"role": "user", "content": "I also mentioned tea, playlists, and reorganizing a shelf. Those are surrounding details, not the durable point.", "timestamp": "2026-04-09T12:03:00"},
+        {"role": "assistant", "content": "Understood. I will treat the tea, playlists, and shelf cleanup as distractions.", "timestamp": "2026-04-09T12:03:15"},
+        {"role": "user", "content": "The durable routine is that I read fiction for about half an hour before bed most nights.", "timestamp": "2026-04-09T12:04:00"},
+        {"role": "assistant", "content": "Got it. The stable routine is the before-bed fiction reading habit.", "timestamp": "2026-04-09T12:04:15"},
+        {"role": "user", "content": "I skipped yesterday because I was traveling, but that missed night should not change the routine memory.", "timestamp": "2026-04-09T12:05:00"},
+        {"role": "assistant", "content": "Understood. The exception does not replace the routine.", "timestamp": "2026-04-09T12:05:15"},
+        {"role": "user", "content": "I also compared e-readers, bedroom lighting, and a few throwaway book recommendations. Those details should not bloat memory.", "timestamp": "2026-04-09T12:06:00"},
+        {"role": "assistant", "content": "I will ignore the e-reader and lighting chatter.", "timestamp": "2026-04-09T12:06:15"},
+        {"role": "user", "content": "A second stable point came up too: when people recommend fiction to me, I prefer spoiler-free recommendations.", "timestamp": "2026-04-09T12:07:00"},
+        {"role": "assistant", "content": "That sounds like a narrow but durable preference about reading recommendations.", "timestamp": "2026-04-09T12:07:15"},
+        {"role": "user", "content": "Clarification: the routine is specifically fiction reading before bed most nights, not just reading in general whenever I have time.", "timestamp": "2026-04-09T12:08:00"},
+        {"role": "assistant", "content": "Clear. The routine should stay specific.", "timestamp": "2026-04-09T12:08:15"},
+        {"role": "user", "content": "And the recommendation preference is specifically about spoilers. I am fine with broad genre suggestions, but I do not want plot points revealed.", "timestamp": "2026-04-09T12:09:00"},
+        {"role": "assistant", "content": "Understood. The preference is spoiler-free fiction recommendations.", "timestamp": "2026-04-09T12:09:15"},
+        {"role": "user", "content": "Now more noise: I thought about tea, a bedtime checklist, and whether to reorganize a bookshelf.", "timestamp": "2026-04-09T12:10:00"},
+        {"role": "assistant", "content": "I will keep those details out of memory.", "timestamp": "2026-04-09T12:10:15"},
+        {"role": "user", "content": "The routine still holds after all that noise: half an hour of fiction before bed on most nights.", "timestamp": "2026-04-09T12:11:00"},
+        {"role": "assistant", "content": "Routine callback noted.", "timestamp": "2026-04-09T12:11:15"},
+        {"role": "user", "content": "The spoiler-free recommendation preference also still holds.", "timestamp": "2026-04-09T12:12:00"},
+        {"role": "assistant", "content": "Preference callback noted.", "timestamp": "2026-04-09T12:12:15"},
+        {"role": "user", "content": "I am adding more noise on purpose: book-app comparisons, screen brightness, and one temporary note about travel reading.", "timestamp": "2026-04-09T12:13:00"},
+        {"role": "assistant", "content": "Those stay transient.", "timestamp": "2026-04-09T12:13:15"},
+        {"role": "user", "content": "Please do not generalize the preference into all recommendations. It is specifically about fiction recommendations staying spoiler-free.", "timestamp": "2026-04-09T12:14:00"},
+        {"role": "assistant", "content": "Understood. I will keep the preference narrowly scoped.", "timestamp": "2026-04-09T12:14:15"},
+        {"role": "user", "content": "And please do not generalize the routine into all evening habits. The memory target is the reading routine only.", "timestamp": "2026-04-09T12:15:00"},
+        {"role": "assistant", "content": "Clear. The routine stays narrowly defined too.", "timestamp": "2026-04-09T12:15:15"},
+        {"role": "user", "content": "I also wrote down a few throwaway book titles earlier. Those are not durable memories.", "timestamp": "2026-04-09T12:16:00"},
+        {"role": "assistant", "content": "I will ignore the throwaway titles.", "timestamp": "2026-04-09T12:16:15"},
+        {"role": "user", "content": "Recap one: fiction reading before bed most nights.", "timestamp": "2026-04-09T12:17:00"},
+        {"role": "assistant", "content": "Recap noted.", "timestamp": "2026-04-09T12:17:15"},
+        {"role": "user", "content": "Recap two: fiction recommendations should stay spoiler-free.", "timestamp": "2026-04-09T12:18:00"},
+        {"role": "assistant", "content": "Recap noted.", "timestamp": "2026-04-09T12:18:15"},
+        {"role": "user", "content": "Ignore the rest: tea, playlists, shelf cleanup, brightness settings, and book-app chatter.", "timestamp": "2026-04-09T12:19:00"},
+        {"role": "assistant", "content": "Understood. I will exclude the surrounding noise.", "timestamp": "2026-04-09T12:19:15"},
+        {"role": "user", "content": "Final recap: the durable set is the before-bed fiction reading routine and the spoiler-free recommendation preference.", "timestamp": "2026-04-09T12:20:00"},
+        {"role": "assistant", "content": "I have the final two-item set and will not widen it.", "timestamp": "2026-04-09T12:20:15"},
+        {"role": "user", "content": "More noise: annotation colors, tea temperature notes, and a list of borrowed titles. Those should stay out of memory.", "timestamp": "2026-04-09T12:21:00"},
+        {"role": "assistant", "content": "Understood. I will treat the annotations, tea notes, and borrowed-title list as transient.", "timestamp": "2026-04-09T12:21:15"},
+        {"role": "user", "content": "Callback on the routine: I still read fiction for about half an hour before bed on most nights.", "timestamp": "2026-04-09T12:22:00"},
+        {"role": "assistant", "content": "Routine callback noted. The before-bed fiction habit remains the same.", "timestamp": "2026-04-09T12:22:15"},
+        {"role": "user", "content": "Callback on the preference: fiction recommendations should still stay spoiler-free.", "timestamp": "2026-04-09T12:23:00"},
+        {"role": "assistant", "content": "Preference callback noted. The recommendation preference remains narrow and durable.", "timestamp": "2026-04-09T12:23:15"},
+        {"role": "user", "content": "Clarification again: that spoiler-free preference is about fiction recommendations, not every summary I ever ask for.", "timestamp": "2026-04-09T12:24:00"},
+        {"role": "assistant", "content": "Clear. I will keep the preference scoped to fiction recommendations.", "timestamp": "2026-04-09T12:24:15"},
+        {"role": "user", "content": "Please ignore shelf-cleanup planning and reading-app export chatter. Those are one-off distractions.", "timestamp": "2026-04-09T12:25:00"},
+        {"role": "assistant", "content": "Understood. The shelf cleanup and app export chatter remain excluded.", "timestamp": "2026-04-09T12:25:15"},
+        {"role": "user", "content": "Closing recap: the durable pair is still the before-bed fiction reading routine plus the spoiler-free fiction recommendation preference.", "timestamp": "2026-04-09T12:26:00"},
+        {"role": "assistant", "content": "Closing recap noted. I will keep the same two-item set only.", "timestamp": "2026-04-09T12:26:15"}
+      ]
+    },
+    {
+      "case_id": "l1_overwrite_preserve_unrelated_memory",
+      "level": "L1",
+      "scenario": "overwrite_preservation",
+      "notes": "Long overwrite case updates one project memory while preserving unrelated profile and tooling constraints.",
+      "prior_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the legacy memory replay report."
+        }
+      ],
+      "gold_final_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the v2 memory evaluation rollout."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the v2 memory evaluation rollout."
+        }
+      ],
+      "gold_preserved_snapshot": [
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        },
+        {
+          "main_class": "constraints",
+          "sub_class": "tooling",
+          "text": "Avoid interactive git commands."
+        }
+      ],
+      "conversation": [
+        {"role": "user", "content": "The old active project is stale. Replace the legacy memory replay report with the v2 memory evaluation rollout.", "timestamp": "2026-04-09T12:21:00"},
+        {"role": "assistant", "content": "Understood. I should update the active project only.", "timestamp": "2026-04-09T12:21:15"},
+        {"role": "user", "content": "Keep my Linux environment and non-interactive git rule exactly as they are.", "timestamp": "2026-04-09T12:22:00"},
+        {"role": "assistant", "content": "Clear. The environment and tooling constraint remain untouched.", "timestamp": "2026-04-09T12:22:15"},
+        {"role": "user", "content": "I also have lots of noise: release-note drafts, dashboard ideas, and an explanation of Hungarian matching.", "timestamp": "2026-04-09T12:23:00"},
+        {"role": "assistant", "content": "I will treat those as transient.", "timestamp": "2026-04-09T12:23:15"},
+        {"role": "user", "content": "Only one thing changed: the active project.", "timestamp": "2026-04-09T12:24:00"},
+        {"role": "assistant", "content": "Understood. The overwrite remains narrow.", "timestamp": "2026-04-09T12:24:15"},
+        {"role": "user", "content": "Do not reinterpret Linux or the git constraint just because I mention them again.", "timestamp": "2026-04-09T12:25:00"},
+        {"role": "assistant", "content": "I will preserve them verbatim.", "timestamp": "2026-04-09T12:25:15"},
+        {"role": "user", "content": "More noise: bug triage notes, presentation polish, room reservations, and onboarding snippets.", "timestamp": "2026-04-09T12:26:00"},
+        {"role": "assistant", "content": "Those remain excluded from memory.", "timestamp": "2026-04-09T12:26:15"},
+        {"role": "user", "content": "The new active project is still the v2 memory evaluation rollout.", "timestamp": "2026-04-09T12:27:00"},
+        {"role": "assistant", "content": "Project callback noted.", "timestamp": "2026-04-09T12:27:15"},
+        {"role": "user", "content": "Linux still holds.", "timestamp": "2026-04-09T12:28:00"},
+        {"role": "assistant", "content": "Profile callback noted.", "timestamp": "2026-04-09T12:28:15"},
+        {"role": "user", "content": "Avoid interactive git commands still holds.", "timestamp": "2026-04-09T12:29:00"},
+        {"role": "assistant", "content": "Constraint callback noted.", "timestamp": "2026-04-09T12:29:15"},
+        {"role": "user", "content": "Conference logistics and room reservations should not replace preserved memories.", "timestamp": "2026-04-09T12:30:00"},
+        {"role": "assistant", "content": "I will ignore the logistics chatter.", "timestamp": "2026-04-09T12:30:15"},
+        {"role": "user", "content": "The overwrite boundary remains the same: change one project memory, preserve the other two.", "timestamp": "2026-04-09T12:31:00"},
+        {"role": "assistant", "content": "Boundary noted.", "timestamp": "2026-04-09T12:31:15"},
+        {"role": "user", "content": "I also copied temporary metrics examples and report screenshots.", "timestamp": "2026-04-09T12:32:00"},
+        {"role": "assistant", "content": "Those remain transient.", "timestamp": "2026-04-09T12:32:15"},
+        {"role": "user", "content": "Again: do not alter Linux.", "timestamp": "2026-04-09T12:33:00"},
+        {"role": "assistant", "content": "Linux remains preserved.", "timestamp": "2026-04-09T12:33:15"},
+        {"role": "user", "content": "Again: do not alter the non-interactive git rule.", "timestamp": "2026-04-09T12:34:00"},
+        {"role": "assistant", "content": "The git rule remains preserved.", "timestamp": "2026-04-09T12:34:15"},
+        {"role": "user", "content": "Again: the project change is from legacy memory replay report to v2 memory evaluation rollout.", "timestamp": "2026-04-09T12:35:00"},
+        {"role": "assistant", "content": "Project replacement remains the only change.", "timestamp": "2026-04-09T12:35:15"},
+        {"role": "user", "content": "Ignore package delivery chatter and lunch discussion too.", "timestamp": "2026-04-09T12:36:00"},
+        {"role": "assistant", "content": "I will ignore those distractions as well.", "timestamp": "2026-04-09T12:36:15"},
+        {"role": "user", "content": "Recap: preserve Linux, preserve non-interactive git, update only the active project.", "timestamp": "2026-04-09T12:37:00"},
+        {"role": "assistant", "content": "Recap noted.", "timestamp": "2026-04-09T12:37:15"},
+        {"role": "user", "content": "The surrounding noise never became memory.", "timestamp": "2026-04-09T12:38:00"},
+        {"role": "assistant", "content": "Understood. I will keep the final set clean.", "timestamp": "2026-04-09T12:38:15"},
+        {"role": "user", "content": "Final recap: Linux, avoid interactive git commands, and the v2 memory evaluation rollout as the active project.", "timestamp": "2026-04-09T12:39:00"},
+        {"role": "assistant", "content": "I have the final overwrite outcome and will keep it narrowly scoped.", "timestamp": "2026-04-09T12:39:15"},
+        {"role": "user", "content": "Boundary again: Linux and the non-interactive git rule should stay exactly as they are. Only the active project changed.", "timestamp": "2026-04-09T12:40:00"},
+        {"role": "assistant", "content": "Understood. The preserved profile and constraint remain untouched while only the project memory changes.", "timestamp": "2026-04-09T12:40:15"},
+        {"role": "user", "content": "More noise: room booking, lunch chatter, and screenshot captions. None of that belongs in memory.", "timestamp": "2026-04-09T12:41:00"},
+        {"role": "assistant", "content": "I will keep the room booking, lunch chatter, and captions out of memory.", "timestamp": "2026-04-09T12:41:15"},
+        {"role": "user", "content": "Project callback: the active project is still the v2 memory evaluation rollout.", "timestamp": "2026-04-09T12:42:00"},
+        {"role": "assistant", "content": "Project callback noted. The updated active project remains stable.", "timestamp": "2026-04-09T12:42:15"},
+        {"role": "user", "content": "Preservation callback: I still work on Linux, and I still want interactive git avoided.", "timestamp": "2026-04-09T12:43:00"},
+        {"role": "assistant", "content": "Preservation callback noted. The Linux profile fact and git constraint still remain.", "timestamp": "2026-04-09T12:43:15"},
+        {"role": "user", "content": "Do not turn today's temporary rollout checklist into another project memory.", "timestamp": "2026-04-09T12:44:00"},
+        {"role": "assistant", "content": "Understood. The checklist stays transient and does not become a second project memory.", "timestamp": "2026-04-09T12:44:15"},
+        {"role": "user", "content": "Closing recap: preserve Linux, preserve the git constraint, and update only the active project to the v2 memory evaluation rollout.", "timestamp": "2026-04-09T12:45:00"},
+        {"role": "assistant", "content": "Closing recap noted. The overwrite remains a single targeted update with two preserved memories.", "timestamp": "2026-04-09T12:45:15"}
+      ]
+    },
+    {
+      "case_id": "l1_overwrite_replace_one_of_many",
+      "level": "L1",
+      "scenario": "overwrite_preservation",
+      "notes": "Prior snapshot contains multiple related memories; only one target project should be replaced while others remain.",
+      "prior_snapshot": [
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the boundary replay cleanup."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "side_project",
+          "text": "The side project is the benchmark notes cleanup."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "review_style",
+          "text": "User prefers findings-first code reviews."
+        },
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "gold_final_snapshot": [
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the phase 7 fixture audit."
+        },
+        {
+          "main_class": "projects",
+          "sub_class": "side_project",
+          "text": "The side project is the benchmark notes cleanup."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "review_style",
+          "text": "User prefers findings-first code reviews."
+        },
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "projects",
+          "sub_class": "active_project",
+          "text": "The active project is the phase 7 fixture audit."
+        }
+      ],
+      "gold_preserved_snapshot": [
+        {
+          "main_class": "projects",
+          "sub_class": "side_project",
+          "text": "The side project is the benchmark notes cleanup."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "review_style",
+          "text": "User prefers findings-first code reviews."
+        },
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "conversation": [
+        {"role": "user", "content": "Only the active project changed. Replace the boundary replay cleanup with the phase 7 fixture audit.", "timestamp": "2026-04-09T12:40:00"},
+        {"role": "assistant", "content": "Understood. I should replace one project memory only.", "timestamp": "2026-04-09T12:40:15"},
+        {"role": "user", "content": "The benchmark notes cleanup is still my side project.", "timestamp": "2026-04-09T12:41:00"},
+        {"role": "assistant", "content": "Clear. The side project remains unchanged.", "timestamp": "2026-04-09T12:41:15"},
+        {"role": "user", "content": "My findings-first review preference is also unchanged.", "timestamp": "2026-04-09T12:42:00"},
+        {"role": "assistant", "content": "Preference remains preserved.", "timestamp": "2026-04-09T12:42:15"},
+        {"role": "user", "content": "And I still work on Linux, which is unrelated to the project change.", "timestamp": "2026-04-09T12:43:00"},
+        {"role": "assistant", "content": "Profile remains preserved too.", "timestamp": "2026-04-09T12:43:15"},
+        {"role": "user", "content": "Noise: report headers, stray terminal output, lunch chatter, and package delivery updates.", "timestamp": "2026-04-09T12:44:00"},
+        {"role": "assistant", "content": "I will ignore the noise.", "timestamp": "2026-04-09T12:44:15"},
+        {"role": "user", "content": "Do not rewrite the whole project cluster. Only one project item changed.", "timestamp": "2026-04-09T12:45:00"},
+        {"role": "assistant", "content": "Understood. The overwrite is targeted.", "timestamp": "2026-04-09T12:45:15"},
+        {"role": "user", "content": "The replacement is the phase 7 fixture audit.", "timestamp": "2026-04-09T12:46:00"},
+        {"role": "assistant", "content": "Active project replacement noted.", "timestamp": "2026-04-09T12:46:15"},
+        {"role": "user", "content": "The side project remains the benchmark notes cleanup.", "timestamp": "2026-04-09T12:47:00"},
+        {"role": "assistant", "content": "Side project preservation noted.", "timestamp": "2026-04-09T12:47:15"},
+        {"role": "user", "content": "The review preference remains findings first.", "timestamp": "2026-04-09T12:48:00"},
+        {"role": "assistant", "content": "Preference preservation noted.", "timestamp": "2026-04-09T12:48:15"},
+        {"role": "user", "content": "The Linux profile fact remains too.", "timestamp": "2026-04-09T12:49:00"},
+        {"role": "assistant", "content": "Profile preservation noted.", "timestamp": "2026-04-09T12:49:15"},
+        {"role": "user", "content": "More related chatter: benchmark spreadsheets, rollout notes, and project names. None of that changes the preserved items.", "timestamp": "2026-04-09T12:50:00"},
+        {"role": "assistant", "content": "I will not let the related chatter widen the overwrite.", "timestamp": "2026-04-09T12:50:15"},
+        {"role": "user", "content": "Again, only one project memory changes.", "timestamp": "2026-04-09T12:51:00"},
+        {"role": "assistant", "content": "That boundary remains clear.", "timestamp": "2026-04-09T12:51:15"},
+        {"role": "user", "content": "Again, the side project stays the same.", "timestamp": "2026-04-09T12:52:00"},
+        {"role": "assistant", "content": "Side project still preserved.", "timestamp": "2026-04-09T12:52:15"},
+        {"role": "user", "content": "Again, findings-first reviews stay the same.", "timestamp": "2026-04-09T12:53:00"},
+        {"role": "assistant", "content": "Preference still preserved.", "timestamp": "2026-04-09T12:53:15"},
+        {"role": "user", "content": "Again, Linux stays the same.", "timestamp": "2026-04-09T12:54:00"},
+        {"role": "assistant", "content": "Profile still preserved.", "timestamp": "2026-04-09T12:54:15"},
+        {"role": "user", "content": "Ignore lunch, package delivery, and temporary examples.", "timestamp": "2026-04-09T12:55:00"},
+        {"role": "assistant", "content": "I will ignore those distractions.", "timestamp": "2026-04-09T12:55:15"},
+        {"role": "user", "content": "Recap: active project becomes the phase 7 fixture audit; side project, review preference, and Linux remain unchanged.", "timestamp": "2026-04-09T12:56:00"},
+        {"role": "assistant", "content": "Recap noted.", "timestamp": "2026-04-09T12:56:15"},
+        {"role": "user", "content": "Final recap: one replacement only, no collateral edits.", "timestamp": "2026-04-09T12:57:00"},
+        {"role": "assistant", "content": "I have the final narrow overwrite outcome.", "timestamp": "2026-04-09T12:57:15"},
+        {"role": "user", "content": "Boundary again: replace only the active project. The side project benchmark notes cleanup stays.", "timestamp": "2026-04-09T12:58:00"},
+        {"role": "assistant", "content": "Understood. The side project remains preserved while only the active project is replaced.", "timestamp": "2026-04-09T12:58:15"},
+        {"role": "user", "content": "The review preference still remains findings first.", "timestamp": "2026-04-09T12:59:00"},
+        {"role": "assistant", "content": "Preference still preserved. No change there.", "timestamp": "2026-04-09T12:59:15"},
+        {"role": "user", "content": "Linux also remains unchanged.", "timestamp": "2026-04-09T13:00:00"},
+        {"role": "assistant", "content": "Profile still preserved. Linux remains in place.", "timestamp": "2026-04-09T13:00:15"},
+        {"role": "user", "content": "Noise: room booking, lunch, slide order, and temporary examples remain excluded.", "timestamp": "2026-04-09T13:01:00"},
+        {"role": "assistant", "content": "I will keep those distractions out of memory.", "timestamp": "2026-04-09T13:01:15"},
+        {"role": "user", "content": "Even if I mention audit subtasks, they do not create a second active project memory.", "timestamp": "2026-04-09T13:02:00"},
+        {"role": "assistant", "content": "Clear. Audit subtasks remain temporary context, not a second project.", "timestamp": "2026-04-09T13:02:15"},
+        {"role": "user", "content": "Closing recap: active project is the phase 7 fixture audit; side project, review preference, and Linux stay intact.", "timestamp": "2026-04-09T13:03:00"},
+        {"role": "assistant", "content": "Closing recap noted. The overwrite still affects only one of the preserved set.", "timestamp": "2026-04-09T13:03:15"},
+        {"role": "user", "content": "Final boundary statement: one targeted replacement, no collateral edits to the preserved memories.", "timestamp": "2026-04-09T13:04:00"},
+        {"role": "assistant", "content": "Understood. The final state remains narrowly scoped to a single project replacement.", "timestamp": "2026-04-09T13:04:15"}
+      ]
+    },
+    {
+      "case_id": "l1_overwrite_drop_stale_plan_preserve_preferences",
+      "level": "L1",
+      "scenario": "overwrite_preservation",
+      "notes": "A stale plan is removed while stable preference and profile memories survive a long mixed dialogue.",
+      "prior_snapshot": [
+        {
+          "main_class": "plans_commitments",
+          "sub_class": "deadline",
+          "text": "User plans to finish the boundary replay write-up this week."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "status_updates",
+          "text": "User prefers short daily status updates."
+        },
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "gold_final_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "status_updates",
+          "text": "User prefers short daily status updates."
+        },
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "gold_extracted_snapshot": [],
+      "gold_preserved_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "status_updates",
+          "text": "User prefers short daily status updates."
+        },
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "conversation": [
+        {"role": "user", "content": "The old plan to finish the boundary replay write-up this week is stale. Remove that commitment.", "timestamp": "2026-04-09T12:58:00"},
+        {"role": "assistant", "content": "Understood. The stale plan should be dropped.", "timestamp": "2026-04-09T12:58:15"},
+        {"role": "user", "content": "Keep my preference for short daily status updates.", "timestamp": "2026-04-09T12:59:00"},
+        {"role": "assistant", "content": "Preference preservation noted.", "timestamp": "2026-04-09T12:59:15"},
+        {"role": "user", "content": "Keep my Linux environment memory too.", "timestamp": "2026-04-09T13:00:00"},
+        {"role": "assistant", "content": "Profile preservation noted.", "timestamp": "2026-04-09T13:00:15"},
+        {"role": "user", "content": "Noise: slide drafts, screenshots, command naming, and an old bug review.", "timestamp": "2026-04-09T13:01:00"},
+        {"role": "assistant", "content": "I will ignore the noise.", "timestamp": "2026-04-09T13:01:15"},
+        {"role": "user", "content": "Do not invent a new plan from the surrounding chatter.", "timestamp": "2026-04-09T13:02:00"},
+        {"role": "assistant", "content": "Understood. I will not manufacture a replacement commitment.", "timestamp": "2026-04-09T13:02:15"},
+        {"role": "user", "content": "The daily status update preference is still valid and unrelated to the stale plan.", "timestamp": "2026-04-09T13:03:00"},
+        {"role": "assistant", "content": "Preference still preserved.", "timestamp": "2026-04-09T13:03:15"},
+        {"role": "user", "content": "Linux is still valid and unrelated to the stale plan.", "timestamp": "2026-04-09T13:04:00"},
+        {"role": "assistant", "content": "Profile still preserved.", "timestamp": "2026-04-09T13:04:15"},
+        {"role": "user", "content": "Noise: report screenshots, docs ideas, and benchmark notes.", "timestamp": "2026-04-09T13:05:00"},
+        {"role": "assistant", "content": "Those remain transient.", "timestamp": "2026-04-09T13:05:15"},
+        {"role": "user", "content": "The stale deadline still needs to be removed.", "timestamp": "2026-04-09T13:06:00"},
+        {"role": "assistant", "content": "Stale deadline removal still noted.", "timestamp": "2026-04-09T13:06:15"},
+        {"role": "user", "content": "Do not replace it with a new weekly commitment based on today's chatter.", "timestamp": "2026-04-09T13:07:00"},
+        {"role": "assistant", "content": "Understood. No replacement commitment will be invented.", "timestamp": "2026-04-09T13:07:15"},
+        {"role": "user", "content": "The preference remains short daily status updates.", "timestamp": "2026-04-09T13:08:00"},
+        {"role": "assistant", "content": "Preference callback noted.", "timestamp": "2026-04-09T13:08:15"},
+        {"role": "user", "content": "The profile remains Linux environment.", "timestamp": "2026-04-09T13:09:00"},
+        {"role": "assistant", "content": "Profile callback noted.", "timestamp": "2026-04-09T13:09:15"},
+        {"role": "user", "content": "Ignore the docs debate, bug review, and naming discussion.", "timestamp": "2026-04-09T13:10:00"},
+        {"role": "assistant", "content": "I will ignore those distractions.", "timestamp": "2026-04-09T13:10:15"},
+        {"role": "user", "content": "Boundary statement again: remove only the stale plan, preserve the preference and profile.", "timestamp": "2026-04-09T13:11:00"},
+        {"role": "assistant", "content": "Boundary noted again.", "timestamp": "2026-04-09T13:11:15"},
+        {"role": "user", "content": "Noise again: temporary examples and screenshot notes.", "timestamp": "2026-04-09T13:12:00"},
+        {"role": "assistant", "content": "Still transient.", "timestamp": "2026-04-09T13:12:15"},
+        {"role": "user", "content": "Recap: drop the stale deadline, keep short daily status updates, keep Linux environment.", "timestamp": "2026-04-09T13:13:00"},
+        {"role": "assistant", "content": "Recap noted.", "timestamp": "2026-04-09T13:13:15"},
+        {"role": "user", "content": "Final recap: no replacement commitment, only preservation of preference and profile.", "timestamp": "2026-04-09T13:14:00"},
+        {"role": "assistant", "content": "I have the final narrow overwrite outcome.", "timestamp": "2026-04-09T13:14:15"},
+        {"role": "user", "content": "I may sketch follow-up ideas tomorrow, but those are not commitments and should not replace the dropped plan.", "timestamp": "2026-04-09T13:15:00"},
+        {"role": "assistant", "content": "Understood. Tentative follow-up ideas stay out of plans_commitments.", "timestamp": "2026-04-09T13:15:15"},
+        {"role": "user", "content": "Preference callback: I still prefer short daily status updates.", "timestamp": "2026-04-09T13:16:00"},
+        {"role": "assistant", "content": "Preference callback noted. That memory remains preserved.", "timestamp": "2026-04-09T13:16:15"},
+        {"role": "user", "content": "Profile callback: I still work on Linux.", "timestamp": "2026-04-09T13:17:00"},
+        {"role": "assistant", "content": "Profile callback noted. Linux remains preserved too.", "timestamp": "2026-04-09T13:17:15"},
+        {"role": "user", "content": "Boundary again: remove the stale deadline only. Do not add a new commitment from brainstorming notes.", "timestamp": "2026-04-09T13:18:00"},
+        {"role": "assistant", "content": "Clear. The overwrite is deletion-only for the stale plan, with no replacement commitment.", "timestamp": "2026-04-09T13:18:15"},
+        {"role": "user", "content": "Noise: meeting slots, screenshot captions, and branch cleanup are still transient.", "timestamp": "2026-04-09T13:19:00"},
+        {"role": "assistant", "content": "I will keep those transient details out of memory.", "timestamp": "2026-04-09T13:19:15"},
+        {"role": "user", "content": "Another pseudo-plan: maybe I will rewrite docs later, but that is speculative and must not be stored as a plan.", "timestamp": "2026-04-09T13:20:00"},
+        {"role": "assistant", "content": "Understood. Speculative doc work is not a commitment and will stay excluded.", "timestamp": "2026-04-09T13:20:15"},
+        {"role": "user", "content": "Closing recap: no commitment remains, while the short daily status update preference and Linux profile fact stay.", "timestamp": "2026-04-09T13:21:00"},
+        {"role": "assistant", "content": "Closing recap noted. Only the preference and profile memories remain.", "timestamp": "2026-04-09T13:21:15"},
+        {"role": "user", "content": "Final boundary statement: preserve preference and profile, and leave plans empty instead of inventing a replacement.", "timestamp": "2026-04-09T13:22:00"},
+        {"role": "assistant", "content": "Understood. I will keep plans empty and preserve the unrelated stable memories.", "timestamp": "2026-04-09T13:22:15"}
+      ]
+    },
+    {
+      "case_id": "l1_overwrite_drop_or_replace_daily_life_preserve_other_classes",
+      "level": "L1",
+      "scenario": "overwrite_preservation",
+      "notes": "A stale daily-life routine is replaced while unrelated preference and profile memories remain intact.",
+      "prior_snapshot": [
+        {
+          "main_class": "daily_life",
+          "sub_class": "reading_routine",
+          "text": "User reads nonfiction during lunch every weekday."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "review_style",
+          "text": "User prefers findings-first code reviews."
+        },
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "gold_final_snapshot": [
+        {
+          "main_class": "daily_life",
+          "sub_class": "reading_routine",
+          "text": "User reads fiction for half an hour before bed most nights."
+        },
+        {
+          "main_class": "preferences",
+          "sub_class": "review_style",
+          "text": "User prefers findings-first code reviews."
+        },
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "gold_extracted_snapshot": [
+        {
+          "main_class": "daily_life",
+          "sub_class": "reading_routine",
+          "text": "User reads fiction for half an hour before bed most nights."
+        }
+      ],
+      "gold_preserved_snapshot": [
+        {
+          "main_class": "preferences",
+          "sub_class": "review_style",
+          "text": "User prefers findings-first code reviews."
+        },
+        {
+          "main_class": "personal_profile",
+          "sub_class": "environment",
+          "text": "User works on Linux."
+        }
+      ],
+      "conversation": [
+        {"role": "user", "content": "One lifestyle memory changed. The old routine about reading nonfiction during lunch every weekday is no longer accurate.", "timestamp": "2026-04-09T13:15:00"},
+        {"role": "assistant", "content": "Understood. I should replace the stale daily-life routine.", "timestamp": "2026-04-09T13:15:15"},
+        {"role": "user", "content": "The durable routine now is reading fiction for about half an hour before bed most nights.", "timestamp": "2026-04-09T13:16:00"},
+        {"role": "assistant", "content": "Got it. The replacement is the before-bed fiction reading routine.", "timestamp": "2026-04-09T13:16:15"},
+        {"role": "user", "content": "Keep my findings-first review preference exactly as it is.", "timestamp": "2026-04-09T13:17:00"},
+        {"role": "assistant", "content": "Preference preservation noted.", "timestamp": "2026-04-09T13:17:15"},
+        {"role": "user", "content": "Keep my Linux environment memory exactly as it is too.", "timestamp": "2026-04-09T13:18:00"},
+        {"role": "assistant", "content": "Profile preservation noted.", "timestamp": "2026-04-09T13:18:15"},
+        {"role": "user", "content": "Noise: book apps, screen brightness, tea, and a bedtime checklist.", "timestamp": "2026-04-09T13:19:00"},
+        {"role": "assistant", "content": "I will treat those as distractions.", "timestamp": "2026-04-09T13:19:15"},
+        {"role": "user", "content": "This is not permission to edit unrelated memories. Replace the stale routine only.", "timestamp": "2026-04-09T13:20:00"},
+        {"role": "assistant", "content": "Understood. The overwrite is narrow.", "timestamp": "2026-04-09T13:20:15"},
+        {"role": "user", "content": "The review preference still stays findings first.", "timestamp": "2026-04-09T13:21:00"},
+        {"role": "assistant", "content": "Preference callback noted.", "timestamp": "2026-04-09T13:21:15"},
+        {"role": "user", "content": "Linux still stays Linux.", "timestamp": "2026-04-09T13:22:00"},
+        {"role": "assistant", "content": "Profile callback noted.", "timestamp": "2026-04-09T13:22:15"},
+        {"role": "user", "content": "The routine replacement still stays before-bed fiction reading.", "timestamp": "2026-04-09T13:23:00"},
+        {"role": "assistant", "content": "Routine callback noted.", "timestamp": "2026-04-09T13:23:15"},
+        {"role": "user", "content": "Noise again: reading apps, brightness settings, travel reading, and tea.", "timestamp": "2026-04-09T13:24:00"},
+        {"role": "assistant", "content": "I will keep ignoring that noise.", "timestamp": "2026-04-09T13:24:15"},
+        {"role": "user", "content": "Do not derive any new preference from the noise. Preserve only the existing review preference.", "timestamp": "2026-04-09T13:25:00"},
+        {"role": "assistant", "content": "Understood. No new preference will be invented here.", "timestamp": "2026-04-09T13:25:15"},
+        {"role": "user", "content": "Do not derive any new profile fact either. Preserve Linux only.", "timestamp": "2026-04-09T13:26:00"},
+        {"role": "assistant", "content": "Understood. No new profile fact will be created.", "timestamp": "2026-04-09T13:26:15"},
+        {"role": "user", "content": "The stale lunch-time nonfiction routine should be gone.", "timestamp": "2026-04-09T13:27:00"},
+        {"role": "assistant", "content": "Stale routine removal noted.", "timestamp": "2026-04-09T13:27:15"},
+        {"role": "user", "content": "The replacement remains the fiction before-bed routine on most nights.", "timestamp": "2026-04-09T13:28:00"},
+        {"role": "assistant", "content": "Replacement callback noted.", "timestamp": "2026-04-09T13:28:15"},
+        {"role": "user", "content": "Ignore throwaway book titles and app names.", "timestamp": "2026-04-09T13:29:00"},
+        {"role": "assistant", "content": "I will ignore the throwaway titles and app names.", "timestamp": "2026-04-09T13:29:15"},
+        {"role": "user", "content": "Recap: replace the stale lunch routine, preserve findings-first reviews, preserve Linux environment.", "timestamp": "2026-04-09T13:30:00"},
+        {"role": "assistant", "content": "Recap noted.", "timestamp": "2026-04-09T13:30:15"},
+        {"role": "user", "content": "Final recap: before-bed fiction routine stays, and unrelated preference and profile memories stay unchanged.", "timestamp": "2026-04-09T13:31:00"},
+        {"role": "assistant", "content": "I have the final overwrite outcome and will keep it narrowly scoped.", "timestamp": "2026-04-09T13:31:15"},
+        {"role": "user", "content": "Boundary again: only the daily-life routine changed. Findings-first reviews and Linux should remain untouched.", "timestamp": "2026-04-09T13:32:00"},
+        {"role": "assistant", "content": "Understood. The overwrite affects only the daily-life memory while the preference and profile stay preserved.", "timestamp": "2026-04-09T13:32:15"},
+        {"role": "user", "content": "More noise: app names, throwaway titles, and shelf photos are still not memory.", "timestamp": "2026-04-09T13:33:00"},
+        {"role": "assistant", "content": "I will keep the app names, titles, and shelf photos transient.", "timestamp": "2026-04-09T13:33:15"},
+        {"role": "user", "content": "Callback on the replacement: the durable routine is reading fiction for half an hour before bed most nights.", "timestamp": "2026-04-09T13:34:00"},
+        {"role": "assistant", "content": "Replacement callback noted. The bedtime fiction routine remains the updated daily-life memory.", "timestamp": "2026-04-09T13:34:15"},
+        {"role": "user", "content": "Callback on preserved items: I still prefer findings-first reviews, and I still work on Linux.", "timestamp": "2026-04-09T13:35:00"},
+        {"role": "assistant", "content": "Preservation callback noted. The unrelated preference and profile remain unchanged.", "timestamp": "2026-04-09T13:35:15"},
+        {"role": "user", "content": "Do not keep the old lunch-break nonfiction routine alongside the new bedtime fiction routine.", "timestamp": "2026-04-09T13:36:00"},
+        {"role": "assistant", "content": "Understood. The stale lunch routine stays removed and is not preserved beside the replacement.", "timestamp": "2026-04-09T13:36:15"},
+        {"role": "user", "content": "Another reminder: book shopping chatter and one-off reading lists are transient.", "timestamp": "2026-04-09T13:37:00"},
+        {"role": "assistant", "content": "I will keep the shopping chatter and one-off lists out of memory.", "timestamp": "2026-04-09T13:37:15"},
+        {"role": "user", "content": "Closing recap: replace the stale lunch routine, preserve the review preference, preserve Linux.", "timestamp": "2026-04-09T13:38:00"},
+        {"role": "assistant", "content": "Closing recap noted. The overwrite remains narrowly targeted to the daily-life memory.", "timestamp": "2026-04-09T13:38:15"},
+        {"role": "user", "content": "Final boundary statement: the before-bed fiction routine is the only daily-life memory, with unrelated preference and profile preserved.", "timestamp": "2026-04-09T13:39:00"},
+        {"role": "assistant", "content": "Understood. I will keep the final state as one daily-life replacement plus the preserved unrelated memories.", "timestamp": "2026-04-09T13:39:15"}
+      ]
+    }
+  ]
+}
