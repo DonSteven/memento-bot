@@ -347,6 +347,16 @@ def test_hybrid_scoring_uses_judge_to_rescue_paraphrase() -> None:
     assert len(metrics["semantic_matches"]) == 0
     assert len(metrics["judge_matches"]) == 1
     assert metrics["judge_matches"][0]["judge_reason_short"] == "Same Linux environment fact."
+    assert metrics["semantic_unmatched_gold"] == [
+        _memory("personal_profile", "environment", "User works on Linux.")
+    ]
+    assert metrics["semantic_unmatched_predicted"] == [
+        _memory(
+            "personal_profile",
+            "development_environment",
+            "User does most of their development work on Linux daily.",
+        )
+    ]
 
 
 def test_hybrid_scoring_skips_judge_for_semantic_match() -> None:
@@ -379,6 +389,8 @@ def test_hybrid_scoring_skips_judge_for_semantic_match() -> None:
     assert metrics["true_positive_count"] == 1
     assert len(metrics["semantic_matches"]) == 1
     assert metrics["judge_matches"] == []
+    assert metrics["semantic_unmatched_gold"] == []
+    assert metrics["semantic_unmatched_predicted"] == []
     assert judge_provider.call_count == 0
 
 
@@ -419,6 +431,8 @@ def test_hybrid_judge_keeps_one_to_one_matching() -> None:
 
     assert len(matching["judge_matches"]) == 1
     assert len(matching["accepted_matches"]) == 1
+    assert len(matching["semantic_unmatched_predicted"]) == 2
+    assert len(matching["semantic_unmatched_gold"]) == 1
     assert len(matching["unmatched_predicted"]) == 1
     assert matching["unmatched_gold"] == []
 
@@ -621,6 +635,12 @@ def test_render_memory_v2_semantic_report_includes_missing_and_extra_items() -> 
                             "judge_reason_short": "Equivalent reply-style preference.",
                         }
                     ],
+                    "semantic_unmatched_gold": [
+                        _memory("preferences", "reply_style", "User prefers concise bullet answers.")
+                    ],
+                    "semantic_unmatched_predicted": [
+                        _memory("preferences", "reply_style", "User prefers concise answers.")
+                    ],
                     "unmatched_gold_items": [
                         _memory("preferences", "reply_style", "User prefers concise bullet-point answers.")
                     ],
@@ -639,5 +659,129 @@ def test_render_memory_v2_semantic_report_includes_missing_and_extra_items() -> 
     assert "### mismatch_case" in rendered
     assert "Judge Matches" in rendered
     assert "Equivalent reply-style preference." in rendered
+    assert "SBERT Unmatched Gold" in rendered
+    assert "[preferences/reply_style] User prefers concise bullet answers." in rendered
+    assert "SBERT Unmatched Predicted" in rendered
+    assert "[preferences/reply_style] User prefers concise answers." in rendered
     assert "[preferences/reply_style] User prefers concise bullet-point answers." in rendered
     assert "[preferences/reply_style] User prefers verbose answers." in rendered
+
+
+def test_render_memory_v2_semantic_report_filters_case_details_to_sbert_mismatches() -> None:
+    report = {
+        "report_version": 1,
+        "evaluation": "memory_v2_semantic",
+        "cases_source": "inline",
+        "mode": "v2",
+        "model": "test-model",
+        "judge_model": "judge-model",
+        "embedding_model": "fake-model",
+        "total_cases": 3,
+        "thresholds": {"extraction": 0.8, "overwrite_preservation": 0.88},
+        "judge_candidate_floor": 0.55,
+        "judge_top_k": 3,
+        "summary": {
+            "overall": {
+                "case_count": 3,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "exact_match_rate": 1.0,
+                "extraction_recall": 1.0,
+                "preservation_recall": None,
+                "consolidate_success_rate": 1.0,
+                "raw_archive_rate": 0.0,
+                "true_positive_count": 3,
+                "false_positive_count": 0,
+                "false_negative_count": 0,
+                "extracted_gold_count": 3,
+                "preserved_gold_count": 0,
+            },
+            "by_level": {},
+            "by_scenario": {},
+            "by_level_scenario": {},
+        },
+        "cases": [
+            {
+                "case_id": "semantic_only_case",
+                "level": "L0",
+                "scenario": "extraction",
+                "raw_archive_detected": False,
+                "metrics": {
+                    "f1": 1.0,
+                    "semantic_matches": [
+                        {
+                            "main_class": "personal_profile",
+                            "predicted": _memory("personal_profile", "environment", "User works on Linux."),
+                            "gold": _memory("personal_profile", "environment", "User works on Linux."),
+                            "similarity": 1.0,
+                        }
+                    ],
+                    "judge_matches": [],
+                    "semantic_unmatched_gold": [],
+                    "semantic_unmatched_predicted": [],
+                    "unmatched_gold_items": [],
+                    "unmatched_predicted_items": [],
+                    "dropped_preserved_items": [],
+                },
+            },
+            {
+                "case_id": "judge_rescue_case",
+                "level": "L0",
+                "scenario": "extraction",
+                "raw_archive_detected": False,
+                "metrics": {
+                    "f1": 1.0,
+                    "semantic_matches": [],
+                    "judge_matches": [
+                        {
+                            "predicted": _memory("personal_profile", "development_environment", "User works on Linux daily."),
+                            "gold": _memory("personal_profile", "environment", "User works on Linux."),
+                            "similarity": 0.74,
+                            "judge_reason_short": "Same Linux environment fact.",
+                        }
+                    ],
+                    "semantic_unmatched_gold": [
+                        _memory("personal_profile", "environment", "User works on Linux.")
+                    ],
+                    "semantic_unmatched_predicted": [
+                        _memory("personal_profile", "development_environment", "User works on Linux daily.")
+                    ],
+                    "unmatched_gold_items": [],
+                    "unmatched_predicted_items": [],
+                    "dropped_preserved_items": [],
+                },
+            },
+            {
+                "case_id": "final_mismatch_case",
+                "level": "L0",
+                "scenario": "extraction",
+                "raw_archive_detected": False,
+                "metrics": {
+                    "f1": 0.0,
+                    "semantic_matches": [],
+                    "judge_matches": [],
+                    "semantic_unmatched_gold": [
+                        _memory("preferences", "reply_style", "User prefers concise bullet answers.")
+                    ],
+                    "semantic_unmatched_predicted": [
+                        _memory("preferences", "reply_style", "User prefers verbose answers.")
+                    ],
+                    "unmatched_gold_items": [
+                        _memory("preferences", "reply_style", "User prefers concise bullet answers.")
+                    ],
+                    "unmatched_predicted_items": [
+                        _memory("preferences", "reply_style", "User prefers verbose answers.")
+                    ],
+                    "dropped_preserved_items": [],
+                },
+            },
+        ],
+    }
+
+    rendered = render_memory_v2_semantic_report_markdown(report)
+
+    assert "| semantic_only_case | L0 | extraction | 1.000 |" in rendered
+    assert "### semantic_only_case" not in rendered
+    assert "### judge_rescue_case" in rendered
+    assert "### final_mismatch_case" in rendered

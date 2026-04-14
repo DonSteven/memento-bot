@@ -421,6 +421,14 @@ def _build_case_metrics(
         "accepted_matches": final_matching["accepted_matches"],
         "semantic_matches": final_matching.get("semantic_matches", final_matching["accepted_matches"]),
         "judge_matches": final_matching.get("judge_matches", []),
+        "semantic_unmatched_gold": final_matching.get(
+            "semantic_unmatched_gold",
+            final_matching["unmatched_gold"],
+        ),
+        "semantic_unmatched_predicted": final_matching.get(
+            "semantic_unmatched_predicted",
+            final_matching["unmatched_predicted"],
+        ),
         "unmatched_gold_items": final_matching["unmatched_gold"],
         "unmatched_predicted_items": final_matching["unmatched_predicted"],
         "missing_extracted_items": extracted_matching["unmatched_gold"],
@@ -679,6 +687,8 @@ async def _hybrid_match_snapshots(
         "accepted_matches": accepted_matches,
         "semantic_matches": semantic_matching["accepted_matches"],
         "judge_matches": judge_matching["judge_matches"],
+        "semantic_unmatched_predicted": semantic_matching["unmatched_predicted"],
+        "semantic_unmatched_gold": semantic_matching["unmatched_gold"],
         "unmatched_predicted": judge_matching["unmatched_predicted"],
         "unmatched_gold": judge_matching["unmatched_gold"],
     }
@@ -1044,12 +1054,25 @@ def render_memory_v2_semantic_report_markdown(report: dict[str, Any]) -> str:
             f"{len(metrics['dropped_preserved_items'])} | {case['raw_archive_detected']} |"
         )
 
+    detail_cases = [
+        case
+        for case in report["cases"]
+        if case["metrics"].get("semantic_unmatched_gold")
+        or case["metrics"].get("semantic_unmatched_predicted")
+    ]
+
     lines.extend([
         "",
         "## Case Details",
     ])
 
-    for case in report["cases"]:
+    if not detail_cases:
+        lines.extend([
+            "",
+            "- (none)",
+        ])
+
+    for case in detail_cases:
         metrics = case["metrics"]
         lines.extend([
             "",
@@ -1082,6 +1105,22 @@ def render_memory_v2_semantic_report_markdown(report: dict[str, Any]) -> str:
                     + f"(sim={match['similarity']:.3f}; reason={match['judge_reason_short']})"
                     for match in metrics["judge_matches"]
                 ]
+            )
+        else:
+            lines.append("  - (none)")
+
+        lines.append("- SBERT Unmatched Gold:")
+        semantic_unmatched_gold = metrics.get("semantic_unmatched_gold", [])
+        if semantic_unmatched_gold:
+            lines.extend([f"  - {_format_memory_item(item)}" for item in semantic_unmatched_gold])
+        else:
+            lines.append("  - (none)")
+
+        lines.append("- SBERT Unmatched Predicted:")
+        semantic_unmatched_predicted = metrics.get("semantic_unmatched_predicted", [])
+        if semantic_unmatched_predicted:
+            lines.extend(
+                [f"  - {_format_memory_item(item)}" for item in semantic_unmatched_predicted]
             )
         else:
             lines.append("  - (none)")
