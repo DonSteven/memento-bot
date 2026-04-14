@@ -1368,6 +1368,124 @@ def memory_v2_eval(
         console.print(Markdown(render_memory_v2_semantic_report_markdown(report)))
 
 
+@app.command("memory-v2-query-eval")
+def memory_v2_query_eval(
+    mode: str = typer.Option(
+        "snapshot",
+        "--mode",
+        help="Execution mode: snapshot or replay",
+    ),
+    level: str = typer.Option("all", "--level", help="Case level: L0, L1, or all"),
+    question_type: str = typer.Option(
+        "all",
+        "--question-type",
+        help=(
+            "Question type filter: single-session-user, single-session-assistant, "
+            "single-session-preference, knowledge-update, or all"
+        ),
+    ),
+    cases_path: str | None = typer.Option(
+        None,
+        "--cases-path",
+        help="JSON file or directory containing query cases (datasets are not bundled)",
+    ),
+    top_k: int = typer.Option(
+        5,
+        "--top-k",
+        help="Top-k FTS retrieval limit for each query",
+    ),
+    embedding_model: str = typer.Option(
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "--embedding-model",
+        help="SentenceTransformer model used for support-memory matching",
+    ),
+    output: str = typer.Option("markdown", "--output", "-o", help="Output format: markdown or json"),
+    save_dir: str | None = typer.Option(
+        None,
+        "--save-dir",
+        help="Directory to save the query evaluation report",
+    ),
+    judge_model: str | None = typer.Option(
+        None,
+        "--judge-model",
+        help="Judge model used when deterministic answer scoring does not match; defaults to the main model",
+    ),
+):
+    """Run live v2 query evaluation against an explicit local case file or directory."""
+    import json
+
+    from nanobot.agent.memory_query_eval import (
+        render_memory_v2_query_report_markdown,
+        run_memory_v2_query_eval,
+        save_memory_v2_query_report,
+    )
+
+    normalized_level = level.strip().upper()
+    normalized_mode = mode.strip().lower()
+    normalized_question_type = question_type.strip().lower()
+    supported_question_types = {
+        "single-session-user",
+        "single-session-assistant",
+        "single-session-preference",
+        "knowledge-update",
+        "all",
+    }
+    if normalized_mode not in {"snapshot", "replay"}:
+        console.print("[red]Error:[/red] --mode must be 'snapshot' or 'replay'")
+        raise typer.Exit(1)
+    if normalized_level not in {"L0", "L1", "ALL"}:
+        console.print("[red]Error:[/red] --level must be 'L0', 'L1', or 'all'")
+        raise typer.Exit(1)
+    if normalized_question_type not in supported_question_types:
+        console.print(
+            "[red]Error:[/red] --question-type must be "
+            "'single-session-user', 'single-session-assistant', "
+            "'single-session-preference', 'knowledge-update', or 'all'"
+        )
+        raise typer.Exit(1)
+    if output not in {"markdown", "json"}:
+        console.print("[red]Error:[/red] --output must be 'markdown' or 'json'")
+        raise typer.Exit(1)
+    if top_k <= 0:
+        console.print("[red]Error:[/red] --top-k must be greater than 0")
+        raise typer.Exit(1)
+
+    if not cases_path:
+        console.print("[red]Error:[/red] datasets are not bundled; provide --cases-path")
+        raise typer.Exit(1)
+
+    runtime_config = _load_runtime_config()
+    provider = _make_provider(runtime_config)
+    model = runtime_config.agents.defaults.model
+    resolved_judge_model = judge_model.strip() if judge_model and judge_model.strip() else model
+
+    run_kwargs = {
+        "mode": normalized_mode,
+        "answer_provider": provider,
+        "judge_provider": provider,
+        "model": model,
+        "judge_model": resolved_judge_model,
+        "cases_path": Path(cases_path).expanduser() if cases_path else None,
+        "level": normalized_level.lower() if normalized_level == "ALL" else normalized_level,
+        "question_type": normalized_question_type,
+        "top_k": top_k,
+        "embedding_model": embedding_model,
+    }
+    if normalized_mode == "replay":
+        run_kwargs["provider"] = provider
+
+    report = run_memory_v2_query_eval(**run_kwargs)
+
+    if save_dir:
+        saved = save_memory_v2_query_report(report, Path(save_dir).expanduser())
+        console.print(f"[green]✓[/green] Saved JSON report to {saved['json']}")
+        console.print(f"[green]✓[/green] Saved Markdown report to {saved['markdown']}")
+        console.print()
+
+    if output == "json":
+        console.print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        console.print(Markdown(render_memory_v2_query_report_markdown(report)))
 
 
 # ============================================================================

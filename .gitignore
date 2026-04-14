@@ -28,3 +28,4 @@ user_guideline/
 artifacts/
 longmemeval*.json
 beir/datasets/
+longmemeval_s_cleaned.json
