@@ -81,6 +81,10 @@ memory_eval = [
     "sentence-transformers>=3.0.0,<4.0.0",
     "scipy>=1.13.0,<2.0.0",
 ]
+web_knowledge = [
+    "sentence-transformers>=3.0.0,<4.0.0",
+    "sqlite-vec>=0.1.6,<1.0.0",
+]
 
 [project.scripts]
 nanobot = "nanobot.cli.commands:app"

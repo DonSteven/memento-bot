@@ -15,12 +15,14 @@ from loguru import logger
 
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
+from nanobot.agent.knowledge import WebKnowledgeHook, WebKnowledgeService
 from nanobot.agent.memory import MemoryConsolidator
 from nanobot.agent.runner import AgentRunSpec, AgentRunner
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
+from nanobot.agent.tools.knowledge import KnowledgeSearchTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.shell import ExecTool
@@ -33,7 +35,7 @@ from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, WebSearchConfig
+    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, KnowledgeConfig, WebSearchConfig
     from nanobot.cron.service import CronService
 
 
@@ -175,8 +177,9 @@ class AgentLoop:
         timezone: str | None = None,
         hooks: list[AgentHook] | None = None,
         memory_mode: str = "legacy",
+        knowledge_config: KnowledgeConfig | None = None,
     ):
-        from nanobot.config.schema import ExecToolConfig, WebSearchConfig
+        from nanobot.config.schema import ExecToolConfig, KnowledgeConfig, WebSearchConfig
 
         self.bus = bus
         self.channels_config = channels_config
@@ -191,14 +194,17 @@ class AgentLoop:
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
         self.memory_mode = memory_mode
+        self.knowledge_config = knowledge_config or KnowledgeConfig()
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
+        self._system_hooks: list[AgentHook] = []
         self._extra_hooks: list[AgentHook] = hooks or []
 
         self.context = ContextBuilder(
             workspace,
             timezone=timezone,
             memory_mode=memory_mode,
+            knowledge_enabled=self.knowledge_config.enabled,
         )
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
@@ -227,6 +233,20 @@ class AgentLoop:
         self._concurrency_gate: asyncio.Semaphore | None = (
             asyncio.Semaphore(_max) if _max > 0 else None
         )
+        self.web_knowledge_service: WebKnowledgeService | None = None
+        if self.knowledge_config.enabled:
+            self.web_knowledge_service = WebKnowledgeService(
+                workspace=workspace,
+                provider=provider,
+                model=self.model,
+                config=self.knowledge_config,
+            )
+            self._system_hooks.append(
+                WebKnowledgeHook(
+                    service=self.web_knowledge_service,
+                    schedule_background=self._schedule_background,
+                )
+            )
         self.memory_consolidator = MemoryConsolidator(
             workspace=workspace,
             provider=provider,
@@ -256,6 +276,8 @@ class AgentLoop:
                 restrict_to_workspace=self.restrict_to_workspace,
                 path_append=self.exec_config.path_append,
             ))
+        if self.web_knowledge_service is not None:
+            self.tools.register(KnowledgeSearchTool(self.web_knowledge_service))
         self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
         self.tools.register(WebFetchTool(proxy=self.web_proxy))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
@@ -340,11 +362,8 @@ class AgentLoop:
             chat_id=chat_id,
             message_id=message_id,
         )
-        hook: AgentHook = (
-            _LoopHookChain(loop_hook, self._extra_hooks)
-            if self._extra_hooks
-            else loop_hook
-        )
+        chained_hooks = [*self._system_hooks, *self._extra_hooks]
+        hook: AgentHook = _LoopHookChain(loop_hook, chained_hooks) if chained_hooks else loop_hook
 
         result = await self.runner.run(AgentRunSpec(
             initial_messages=initial_messages,

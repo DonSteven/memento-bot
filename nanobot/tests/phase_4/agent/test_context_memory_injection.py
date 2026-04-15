@@ -134,3 +134,13 @@ def test_context_builder_v2_appends_relevant_project_hits_after_core_memory(tmp_
     assert "## Core Memory" in system_prompt
     assert "## Retrieved Memory" in system_prompt
     assert "[projects/active_project] The active project is nanobot." in system_prompt
+
+
+def test_context_builder_with_web_knowledge_enabled_adds_kb_search_guidance(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    builder = ContextBuilder(workspace, knowledge_enabled=True)
+
+    messages = builder.build_messages(history=[], current_message="What changed in Linux 6.9?")
+
+    system_prompt = messages[0]["content"]
+    assert "use 'kb_search' before calling 'web_search' or 'web_fetch'" in system_prompt

@@ -166,6 +166,20 @@ class MemoryConfig(Base):
     mode: Literal["legacy", "v2"] = "legacy"
 
 
+class KnowledgeConfig(Base):
+    """External web knowledge configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    summary_model: str | None = None
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    chunk_chars: int = Field(default=1200, ge=200)
+    chunk_overlap_chars: int = Field(default=200, ge=0)
+    doc_limit: int = Field(default=8, ge=1, le=20)
+    evidence_limit: int = Field(default=4, ge=1, le=10)
+
+
 class Config(BaseSettings): # 继承自 pydantic.BaseSettings
     """Root configuration for nanobot."""
 
@@ -176,6 +190,7 @@ class Config(BaseSettings): # 继承自 pydantic.BaseSettings
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
 
     @property
     def workspace_path(self) -> Path:

@@ -24,6 +24,7 @@ def test_agent_passes_memory_mode_to_loop(tmp_path: Path) -> None:
     config = Config()
     config.agents.defaults.workspace = str(tmp_path / "default-workspace")
     config.memory.mode = "v2"
+    config.knowledge.enabled = True
 
     with patch("nanobot.config.loader.load_config", return_value=config), \
          patch("nanobot.cli.commands.sync_workspace_templates"), \
@@ -45,3 +46,4 @@ def test_agent_passes_memory_mode_to_loop(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert mock_agent_loop_cls.call_args.kwargs["memory_mode"] == "v2"
+    assert mock_agent_loop_cls.call_args.kwargs["knowledge_config"].enabled is True
