@@ -68,11 +68,28 @@ def _default_vec_loader(conn: sqlite3.Connection) -> None:
         ) from exc
 
     try:
+        conn.enable_load_extension(True)
+    except AttributeError as exc:
+        raise RuntimeError(
+            "The active sqlite3 build does not expose enable_load_extension(), "
+            "which is required to load sqlite-vec."
+        ) from exc
+    except sqlite3.Error as exc:
+        raise RuntimeError(
+            "The active sqlite3 build could not enable SQLite extension loading, "
+            f"which is required to load sqlite-vec: {exc}"
+        ) from exc
+    try:
         sqlite_vec.load(conn)
     except AttributeError as exc:
         raise RuntimeError("The installed sqlite-vec package does not expose sqlite_vec.load().") from exc
     except sqlite3.Error as exc:
         raise RuntimeError(f"Failed to load sqlite-vec extension: {exc}") from exc
+    finally:
+        try:
+            conn.enable_load_extension(False)
+        except (AttributeError, sqlite3.Error):
+            pass
 
 
 class WebKnowledgeDatabase:

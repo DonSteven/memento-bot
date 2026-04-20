@@ -156,3 +156,63 @@ def test_rebuild_indexes_restores_summary_and_chunk_fts_queries(tmp_path) -> Non
 
     assert len(db.search_summary_fts("highlights", 5)) == 1
     assert len(db.search_chunk_fts("emphasizes", [1], 5)) == 1
+
+
+def test_default_vec_loader_enables_and_disables_extension_loading(monkeypatch) -> None:
+    events: list[tuple[str, bool] | tuple[str, str]] = []
+
+    class _FakeConnection:
+        def enable_load_extension(self, enabled: bool) -> None:
+            events.append(("enable", enabled))
+
+    class _FakeSqliteVec:
+        @staticmethod
+        def load(conn) -> None:
+            assert isinstance(conn, _FakeConnection)
+            events.append(("load", "sqlite-vec"))
+
+    monkeypatch.setitem(sys.modules, "sqlite_vec", _FakeSqliteVec)
+
+    _default_vec_loader(_FakeConnection())
+
+    assert events == [
+        ("enable", True),
+        ("load", "sqlite-vec"),
+        ("enable", False),
+    ]
+
+
+def test_default_vec_loader_surfaces_enable_load_extension_failures(monkeypatch) -> None:
+    class _FakeConnection:
+        def enable_load_extension(self, enabled: bool) -> None:
+            raise sqlite3.OperationalError("not authorized")
+
+    class _FakeSqliteVec:
+        @staticmethod
+        def load(conn) -> None:
+            raise AssertionError("sqlite_vec.load() should not be called when enabling fails")
+
+    monkeypatch.setitem(sys.modules, "sqlite_vec", _FakeSqliteVec)
+
+    with pytest.raises(RuntimeError, match="could not enable SQLite extension loading"):
+        _default_vec_loader(_FakeConnection())
+
+
+def test_default_vec_loader_disables_extension_loading_after_load_failure(monkeypatch) -> None:
+    events: list[tuple[str, bool]] = []
+
+    class _FakeConnection:
+        def enable_load_extension(self, enabled: bool) -> None:
+            events.append(("enable", enabled))
+
+    class _FakeSqliteVec:
+        @staticmethod
+        def load(conn) -> None:
+            raise sqlite3.OperationalError("boom")
+
+    monkeypatch.setitem(sys.modules, "sqlite_vec", _FakeSqliteVec)
+
+    with pytest.raises(RuntimeError, match="Failed to load sqlite-vec extension: boom"):
+        _default_vec_loader(_FakeConnection())
+
+    assert events == [("enable", True), ("enable", False)]
