@@ -86,6 +86,10 @@ web_knowledge = [
     "sqlite-vec>=0.1.6,<1.0.0",
 ]
 
+beir_eval = [
+    "beir>=2.0.0,<3.0.0",
+]
+
 [project.scripts]
 nanobot = "nanobot.cli.commands:app"
 

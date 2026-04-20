@@ -1238,6 +1238,77 @@ def status():
 # ============================================================================
 
 
+@app.command("knowledge-beir-eval")
+def knowledge_beir_eval(
+    dataset: str = typer.Option(
+        "scifact",
+        "--dataset",
+        help="BEIR dataset to evaluate; currently only scifact is supported",
+    ),
+    output: str = typer.Option("markdown", "--output", "-o", help="Output format: markdown or json"),
+    save_dir: str | None = typer.Option(
+        None,
+        "--save-dir",
+        help="Directory to save the BEIR evaluation report",
+    ),
+    embedding_model: str = typer.Option(
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "--embedding-model",
+        help="SentenceTransformer model used for external knowledge embeddings",
+    ),
+    bench_dir: str | None = typer.Option(
+        None,
+        "--bench-dir",
+        help="Directory for downloaded BEIR data and the benchmark knowledge workspace",
+    ),
+):
+    """Run a BEIR benchmark over the current external knowledge retrieval path."""
+    import json
+
+    from nanobot.agent.knowledge_beir_eval import (
+        render_knowledge_beir_report_markdown,
+        run_knowledge_beir_eval,
+        save_knowledge_beir_report,
+    )
+
+    normalized_dataset = dataset.strip().lower()
+    if normalized_dataset != "scifact":
+        console.print("[red]Error:[/red] --dataset must be 'scifact'")
+        raise typer.Exit(1)
+    if output not in {"markdown", "json"}:
+        console.print("[red]Error:[/red] --output must be 'markdown' or 'json'")
+        raise typer.Exit(1)
+
+    runtime_config = _load_runtime_config()
+    provider = _make_provider(runtime_config)
+    model = runtime_config.agents.defaults.model
+    resolved_bench_dir = (
+        Path(bench_dir).expanduser()
+        if bench_dir
+        else runtime_config.workspace_path / "benchmarks" / "beir" / normalized_dataset
+    )
+
+    report = run_knowledge_beir_eval(
+        workspace=runtime_config.workspace_path,
+        provider=provider,
+        model=model,
+        dataset=normalized_dataset,
+        bench_dir=resolved_bench_dir,
+        embedding_model=embedding_model,
+    )
+
+    if save_dir:
+        saved = save_knowledge_beir_report(report, Path(save_dir).expanduser())
+        console.print(f"[green]✓[/green] Saved JSON report to {saved['json']}")
+        console.print(f"[green]✓[/green] Saved Markdown report to {saved['markdown']}")
+        console.print()
+
+    if output == "json":
+        console.print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        console.print(Markdown(render_knowledge_beir_report_markdown(report)))
+
+
 @app.command("memory-eval")
 def memory_eval(
     output: str = typer.Option("markdown", "--output", "-o", help="Output format: markdown or json"),
