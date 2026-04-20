@@ -1,9 +1,9 @@
-# Phase 5 test content:
+# Knowledge test content:
 # - verifies the web knowledge hook only schedules successful text web_fetch results
 # - verifies image fetches, tool errors, and non-web tools are ignored
 # How to test:
 # - run this file directly with:
-#   uv run --extra dev pytest -q nanobot/tests/phase_5/agent/test_knowledge_hook.py
+#   uv run --extra dev pytest -q nanobot/tests/knowledge/test_knowledge_hook.py
 
 from __future__ import annotations
 
@@ -38,11 +38,7 @@ class _KeywordEmbedder:
         return vectors
 
 
-class _ScriptedProvider(LLMProvider):
-    def __init__(self, responses: list[LLMResponse]):
-        super().__init__()
-        self._responses = list(responses)
-
+class _UnusedProvider(LLMProvider):
     async def chat(
         self,
         messages: list[dict[str, Any]],
@@ -53,8 +49,6 @@ class _ScriptedProvider(LLMProvider):
         reasoning_effort: str | None = None,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> LLMResponse:
-        if self._responses:
-            return self._responses.pop(0)
         return LLMResponse(content="")
 
     def get_default_model(self) -> str:
@@ -82,11 +76,9 @@ def _success_payload(url: str) -> str:
 async def test_web_knowledge_hook_only_schedules_successful_text_fetches(tmp_path) -> None:
     service = WebKnowledgeService(
         workspace=tmp_path,
-        provider=_ScriptedProvider(
-            [LLMResponse(content="Linux 6.9 release summary. Facts: Released in June 2024.")]
-        ),
+        provider=_UnusedProvider(),
         model="test-model",
-        config=KnowledgeConfig(enabled=True),
+        config=KnowledgeConfig(enabled=True, rerank_model=""),
         db=WebKnowledgeDatabase(tmp_path, vec_backend="array"),
         embedder=_KeywordEmbedder(),
     )

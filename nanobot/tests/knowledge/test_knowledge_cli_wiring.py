@@ -1,9 +1,8 @@
-# Phase 0 test content:
-# - verifies the CLI agent command forwards config.memory.mode into AgentLoop
-# - keeps Phase 0 CLI wiring isolated from the repository's original CLI tests
+# Knowledge test content:
+# - verifies the CLI agent command forwards config.knowledge into AgentLoop
 # How to test:
 # - run this file directly with:
-#   uv run --extra dev pytest -q nanobot/tests/phase_0/cli/test_agent_memory_mode.py
+#   uv run --extra dev pytest -q nanobot/tests/knowledge/test_knowledge_cli_wiring.py
 
 from __future__ import annotations
 
@@ -16,14 +15,13 @@ from nanobot.bus.events import OutboundMessage
 from nanobot.cli.commands import app
 from nanobot.config.schema import Config
 
-
 runner = CliRunner()
 
 
-def test_agent_passes_memory_mode_to_loop(tmp_path: Path) -> None:
+def test_agent_passes_knowledge_config_to_loop(tmp_path: Path) -> None:
     config = Config()
     config.agents.defaults.workspace = str(tmp_path / "default-workspace")
-    config.memory.mode = "v2"
+    config.knowledge.enabled = True
 
     with patch("nanobot.config.loader.load_config", return_value=config), \
          patch("nanobot.cli.commands.sync_workspace_templates"), \
@@ -44,4 +42,4 @@ def test_agent_passes_memory_mode_to_loop(tmp_path: Path) -> None:
         result = runner.invoke(app, ["agent", "-m", "hello"])
 
     assert result.exit_code == 0
-    assert mock_agent_loop_cls.call_args.kwargs["memory_mode"] == "v2"
+    assert mock_agent_loop_cls.call_args.kwargs["knowledge_config"].enabled is True

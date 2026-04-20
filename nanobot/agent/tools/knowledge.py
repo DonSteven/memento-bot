@@ -16,14 +16,15 @@ class KnowledgeSearchTool(Tool):
     name = "kb_search"
     description = (
         "Search the local external web knowledge base built from prior successful web_fetch results. "
+        "Returns candidate parent blocks plus child evidence chunks. "
         "Use this before web_search/web_fetch for non-current factual questions."
     )
     parameters = {
         "type": "object",
         "properties": {
             "query": {"type": "string", "description": "Question or retrieval query to look up locally."},
-            "docLimit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 8},
-            "evidenceLimit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 4},
+            "docLimit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
+            "evidenceLimit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 5},
         },
         "required": ["query"],
     }

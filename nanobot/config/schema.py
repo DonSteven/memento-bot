@@ -172,12 +172,16 @@ class KnowledgeConfig(Base):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-    summary_model: str | None = None
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    chunk_chars: int = Field(default=1200, ge=200)
-    chunk_overlap_chars: int = Field(default=200, ge=0)
-    doc_limit: int = Field(default=8, ge=1, le=20)
-    evidence_limit: int = Field(default=4, ge=1, le=10)
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    chunk_chars: int = Field(default=800, ge=200)
+    chunk_overlap_chars: int = Field(default=150, ge=0)
+    doc_limit: int = Field(default=10, ge=1, le=100)
+    evidence_limit: int = Field(default=5, ge=1, le=100)
+    child_fts_limit: int = Field(default=24, ge=1, le=100)
+    child_vec_limit: int = Field(default=24, ge=1, le=100)
+    rerank_child_pool: int = Field(default=24, ge=1, le=100)
+    max_children_per_parent: int = Field(default=2, ge=1, le=10)
 
 
 class Config(BaseSettings): # 继承自 pydantic.BaseSettings

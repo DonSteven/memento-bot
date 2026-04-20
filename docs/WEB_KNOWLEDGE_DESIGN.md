@@ -29,9 +29,10 @@ agent runtime.
 
 ## Storage and ingestion
 
-The store keeps original page text, a page summary and source chunks. Original
+The store keeps original page text, parent blocks and child chunks. Original
 text is retained so evidence can be checked and derived indexes can be rebuilt.
-Summary and chunk FTS/vector indexes support coarse-to-fine retrieval.
+Parent blocks preserve headings, FAQs, lists and tables. Smaller overlapping
+child chunks provide focused retrieval units linked to their parent blocks.
 
 For each successful `web_fetch` result:
 
@@ -41,9 +42,10 @@ For each successful `web_fetch` result:
    untrusted external material.
 3. Normalize the URL and text for consistent storage and duplicate detection.
 4. Compare the page's content hash with existing content. Identical content
-   avoids repeated summarization and embedding; changed content replaces the
+   avoids repeated segmentation and embedding; changed content replaces the
    page's derived records.
-5. Produce the summary and overlapping chunks, then compute their embeddings.
+5. Split the page into structural parent blocks and smaller child chunks, then
+   compute their embeddings.
 6. Persist the page, derived records and corresponding indexes as a consistent
    page snapshot.
 
@@ -53,9 +55,11 @@ dimensions and index contents must agree with the configured retrieval path.
 
 ## Local retrieval
 
-The initial path retrieves candidate pages through their summaries, combining
-FTS and vector rankings with reciprocal rank fusion. It then selects relevant
-source chunks within those pages and returns bounded evidence.
+The retrieval path searches child chunks with FTS and vector similarity, then
+combines the rankings with reciprocal rank fusion. A cross-encoder reranks a
+bounded child pool. Parent scores use their best child plus a small coverage
+bonus. Evidence selection limits both the total number of chunks and the number
+from any one parent, while retaining the links back to source pages.
 
 Each evidence item carries source identifiers, text, URL and title. Retrieval
 scores describe ranking signals, not calibrated probabilities. The tool also
@@ -69,8 +73,8 @@ treated as instructions to execute tools or override system messages.
 
 ## Backend and configuration boundaries
 
-The current knowledge extra supplies local SentenceTransformer embeddings and
-sqlite-vec. Models and dimension settings belong to the configured backend.
+The current knowledge extra supplies local SentenceTransformer embeddings, a
+CrossEncoder reranker and sqlite-vec. Models and dimension settings belong to the configured backend.
 Tests inject deterministic embeddings and an in-memory-compatible vector backend
 so normal regression checks do not download models or call paid services.
 
