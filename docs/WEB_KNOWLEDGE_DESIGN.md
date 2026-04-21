@@ -45,7 +45,8 @@ For each successful `web_fetch` result:
    avoids repeated segmentation and embedding; changed content replaces the
    page's derived records.
 5. Split the page into structural parent blocks and smaller child chunks, then
-   compute their embeddings.
+   embed the child chunks. Parent text remains available for grouping and FTS;
+   the production vector path stores child embeddings only.
 6. Persist the page, derived records and corresponding indexes as a consistent
    page snapshot.
 

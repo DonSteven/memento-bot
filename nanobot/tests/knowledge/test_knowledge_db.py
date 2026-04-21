@@ -99,6 +99,29 @@ def test_initialize_is_idempotent_for_same_vector_dim(tmp_path) -> None:
     reopened.initialize(3)
 
     assert reopened.get_schema_version() == SCHEMA_VERSION
+    with reopened.connect() as conn:
+        row = conn.execute(
+            "select name from sqlite_master where type in ('table', 'view') and name = 'page_parent_vec'"
+        ).fetchone()
+    assert row is None
+
+
+def test_initialize_rejects_incompatible_existing_schema_version(tmp_path) -> None:
+    db = WebKnowledgeDatabase(tmp_path, vec_backend="array")
+    db.initialize(3)
+
+    with db.connect() as conn:
+        conn.execute(
+            """
+            insert into metadata(key, value) values('schema_version', ?)
+            on conflict(key) do update set value=excluded.value
+            """,
+            (str(SCHEMA_VERSION - 1),),
+        )
+
+    reopened = WebKnowledgeDatabase(tmp_path, vec_backend="array")
+    with pytest.raises(RuntimeError, match="Recreate the database"):
+        reopened.initialize(3)
 
 
 def test_upsert_page_snapshot_deduplicates_and_replaces_changed_parent_child_content(tmp_path) -> None:
@@ -118,7 +141,6 @@ def test_upsert_page_snapshot_deduplicates_and_replaces_changed_parent_child_con
             "# Linux 6.9 Release\n\nLinux 6.9 was released in June 2024.",
             "The release included filesystem and scheduler updates.",
         ],
-        parent_embeddings=[[1.0, 0.0, 0.0], [0.9, 0.1, 0.0]],
         children=[
             {"parent_index": 0, "child_index": 0, "text": "# Linux 6.9 Release\n\nLinux 6.9 was released in June 2024."},
             {"parent_index": 1, "child_index": 0, "text": "The release included filesystem and scheduler updates."},
@@ -146,7 +168,6 @@ def test_upsert_page_snapshot_deduplicates_and_replaces_changed_parent_child_con
         raw_text="Linux 6.9 was released in June 2024.",
         is_partial=False,
         parents=["unused"],
-        parent_embeddings=[[1.0, 0.0, 0.0]],
         children=[{"parent_index": 0, "child_index": 0, "text": "unused"}],
         child_embeddings=[[1.0, 0.0, 0.0]],
         now="2026-04-14T22:05:00",
@@ -170,7 +191,6 @@ def test_upsert_page_snapshot_deduplicates_and_replaces_changed_parent_child_con
         raw_text="Linux 6.9 release notes confirmed the June 2024 release date.",
         is_partial=True,
         parents=["# Linux 6.9 Release Notes\n\nLinux 6.9 release notes confirmed the June 2024 release date."],
-        parent_embeddings=[[0.8, 0.2, 0.0]],
         children=[
             {
                 "parent_index": 0,
@@ -200,9 +220,7 @@ def test_upsert_page_snapshot_deduplicates_and_replaces_changed_parent_child_con
     assert db.search_child_fts("scheduler", 5) == []
 
     with db.connect() as conn:
-        parent_vec_count = conn.execute("select count(*) as count from page_parent_vec").fetchone()["count"]
         child_vec_count = conn.execute("select count(*) as count from parent_child_vec").fetchone()["count"]
-    assert int(parent_vec_count) == 1
     assert int(child_vec_count) == 1
 
 
@@ -243,7 +261,6 @@ def test_rebuild_indexes_restores_parent_and_child_fts_queries(tmp_path) -> None
             "# Nanobot Web Knowledge\n\nNanobot stores fetched webpages in SQLite.",
             "The local retrieval stack combines FTS5 and vector search.",
         ],
-        parent_embeddings=[[0.0, 1.0, 0.0], [0.0, 0.9, 0.1]],
         children=[
             {"parent_index": 0, "child_index": 0, "text": "# Nanobot Web Knowledge\n\nNanobot stores fetched webpages in SQLite."},
             {"parent_index": 1, "child_index": 0, "text": "The local retrieval stack combines FTS5 and vector search."},

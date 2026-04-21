@@ -11,7 +11,7 @@ from typing import Any
 
 from nanobot.utils.helpers import ensure_dir
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _RRF_K = 60
 
 
@@ -219,19 +219,11 @@ class WebKnowledgeDatabase:
 
             if self.vec_backend == "sqlite-vec":
                 conn.execute(
-                    f"create virtual table if not exists page_parent_vec using vec0(embedding float[{vector_dim}])"
-                )
-                conn.execute(
                     f"create virtual table if not exists parent_child_vec using vec0(embedding float[{vector_dim}])"
                 )
             else:
                 conn.executescript(
                     """
-                    create table if not exists page_parent_vec (
-                        rowid integer primary key,
-                        embedding_json text not null
-                    );
-
                     create table if not exists parent_child_vec (
                         rowid integer primary key,
                         embedding_json text not null
@@ -354,20 +346,17 @@ class WebKnowledgeDatabase:
         raw_text: str,
         is_partial: bool,
         parents: list[str],
-        parent_embeddings: list[list[float]],
         children: list[dict[str, Any]],
         child_embeddings: list[list[float]],
         now: str,
     ) -> dict[str, Any]:
-        if len(parents) != len(parent_embeddings):
-            raise ValueError("parent_embeddings must align with parents")
         if len(children) != len(child_embeddings):
             raise ValueError("child_embeddings must align with children")
         if not parents or not children:
             raise ValueError("parents and children must not be empty")
 
         if self._vector_dim is None:
-            first_vector = parent_embeddings[0] if parent_embeddings else child_embeddings[0]
+            first_vector = child_embeddings[0]
             self.initialize(len(first_vector))
 
         with self.connect() as conn:
@@ -456,7 +445,7 @@ class WebKnowledgeDatabase:
                 write_status = "inserted"
 
             parent_id_by_index: dict[int, int] = {}
-            for parent_index, (parent_text, parent_embedding) in enumerate(zip(parents, parent_embeddings)):
+            for parent_index, parent_text in enumerate(parents):
                 parent_cursor = conn.execute(
                     "insert into page_parents(page_id, parent_index, text) values (?, ?, ?)",
                     (page_id, parent_index, parent_text),
@@ -464,7 +453,6 @@ class WebKnowledgeDatabase:
                 parent_id = int(parent_cursor.lastrowid)
                 parent_id_by_index[parent_index] = parent_id
                 self._insert_parent_fts(conn, parent_id, parent_text)
-                self._upsert_vector_row(conn, "page_parent_vec", parent_id, parent_embedding)
 
             for child_record, child_embedding in zip(children, child_embeddings):
                 parent_index = int(child_record["parent_index"])
@@ -558,59 +546,6 @@ class WebKnowledgeDatabase:
                 (fts_query, limit),
             ).fetchall()
         return [dict(row) for row in rows]
-
-    def search_parent_vector(self, query_vector: list[float], limit: int) -> list[dict[str, Any]]:
-        if not self.db_path.exists():
-            return []
-        if self.vec_backend == "sqlite-vec":
-            with self.connect() as conn:
-                rows = conn.execute(
-                    """
-                    with vec_hits as (
-                        select rowid as parent_id, distance
-                        from page_parent_vec
-                        where embedding match ? and k = ?
-                    )
-                    select pp.parent_id, pp.page_id, pp.parent_index, pp.text as parent_text,
-                           wp.title, wp.final_url, wp.is_partial,
-                           vec_hits.distance as rank_score
-                    from vec_hits
-                    join page_parents pp on pp.parent_id = vec_hits.parent_id
-                    join web_pages wp on wp.page_id = pp.page_id
-                    order by vec_hits.distance asc, pp.parent_id asc
-                    limit ?
-                    """,
-                    (_vector_json(query_vector), limit, limit),
-                ).fetchall()
-            return [dict(row) for row in rows]
-
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                select pp.parent_id, pp.page_id, pp.parent_index, pp.text as parent_text,
-                       wp.title, wp.final_url, wp.is_partial, pv.embedding_json
-                from page_parent_vec pv
-                join page_parents pp on pp.parent_id = pv.rowid
-                join web_pages wp on wp.page_id = pp.page_id
-                """
-            ).fetchall()
-        hits = []
-        for row in rows:
-            embedding = json.loads(str(row["embedding_json"]))
-            hits.append(
-                {
-                    "parent_id": int(row["parent_id"]),
-                    "page_id": int(row["page_id"]),
-                    "parent_index": int(row["parent_index"]),
-                    "parent_text": str(row["parent_text"]),
-                    "title": str(row["title"]),
-                    "final_url": str(row["final_url"]),
-                    "is_partial": int(row["is_partial"]),
-                    "rank_score": 1.0 - _cosine_similarity(query_vector, [float(value) for value in embedding]),
-                }
-            )
-        hits.sort(key=lambda item: (float(item["rank_score"]), int(item["parent_id"])))
-        return hits[:limit]
 
     def search_child_fts(
         self,
@@ -767,7 +702,6 @@ class WebKnowledgeDatabase:
         ).fetchall()
         for row in parent_rows:
             self._delete_parent_fts(conn, int(row["parent_id"]), str(row["text"]))
-            self._delete_vector_row(conn, "page_parent_vec", int(row["parent_id"]))
         conn.execute("delete from page_parents where page_id = ?", (page_id,))
 
     @staticmethod

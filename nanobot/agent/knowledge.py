@@ -479,10 +479,7 @@ class WebKnowledgeService:
             logger.debug("Skipping web knowledge ingest for {} because child chunking produced no content", page.final_url)
             return None
 
-        parent_embeddings = await asyncio.to_thread(self.embedder.encode_texts, parents)
         child_embeddings = await asyncio.to_thread(self.embedder.encode_texts, child_texts)
-        if len(parent_embeddings) != len(parents):
-            raise RuntimeError("Embedding backend returned an unexpected number of parent vectors")
         if len(child_embeddings) != len(children):
             raise RuntimeError("Embedding backend returned an unexpected number of child vectors")
 
@@ -496,7 +493,6 @@ class WebKnowledgeService:
             raw_text=page.raw_text,
             is_partial=page.is_partial,
             parents=parents,
-            parent_embeddings=parent_embeddings,
             children=children,
             child_embeddings=child_embeddings,
             now=now,
