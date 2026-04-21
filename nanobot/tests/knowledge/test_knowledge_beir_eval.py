@@ -1,6 +1,6 @@
 # Knowledge BEIR eval test content:
 # - verifies BEIR corpus documents are ingested into the external knowledge DB
-# - verifies the runner uses the current search() limits and emits top-20 metrics only
+# - verifies the runner uses the current search() limits and emits metrics aligned to doc_limit
 # - verifies reruns dedupe unchanged documents and report parent-child diagnostics
 
 from __future__ import annotations
@@ -8,6 +8,8 @@ from __future__ import annotations
 import math
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from nanobot.agent.knowledge import WebKnowledgeService
 from nanobot.agent.knowledge_beir_eval import (
@@ -246,11 +248,19 @@ def test_run_knowledge_beir_eval_uses_current_search_limits_and_reports_current_
     assert report["evidence_limit"] == 5
     assert report["corpus_size"] == 22
     assert report["query_count"] == 2
-    assert set(report["summary"]["ndcg"]) == {1, 3, 5, 10, 20, 50, 100}
-    assert set(report["summary"]["mrr"]) == {10, 20, 50, 100}
+    assert set(report["summary"]["ndcg"]) == {1, 3, 5, 10}
+    assert set(report["summary"]["mrr"]) == {10}
     assert "summary_model" not in report
     assert report["diagnostics"]["average_candidate_parents"] <= 10.0
     assert report["diagnostics"]["average_evidence_children"] >= 0.0
+    assert report["latency"]["average_query_search_latency_seconds"] >= 0.0
+    assert len(report["latency"]["slowest_queries"]) <= 5
+    slowest = report["latency"]["slowest_queries"]
+    assert slowest == sorted(
+        slowest,
+        key=lambda item: (-float(item["query_search_latency_seconds"]), str(item["query_id"])),
+    )
+    assert report["cases"][0]["query_search_latency_seconds"] >= 0.0
     assert report["cases"][0]["top_candidate_parent_ids"]
 
 
@@ -285,7 +295,7 @@ def test_run_knowledge_beir_eval_rerun_marks_unchanged_docs(monkeypatch, tmp_pat
 
     assert first["ingestion_summary"]["inserted"] == 22
     assert second["ingestion_summary"]["unchanged"] == 22
-    assert second["summary"]["recall"][100] == second["summary"]["recall"][10]
+    assert second["summary"]["recall"][10] == pytest.approx((1.0 + (10.0 / 21.0)) / 2.0)
 
 
 def test_render_and_save_knowledge_beir_report(tmp_path: Path) -> None:
@@ -303,11 +313,11 @@ def test_render_and_save_knowledge_beir_report(tmp_path: Path) -> None:
         "query_count": 2,
         "ingestion_summary": {"inserted": 22, "updated": 0, "unchanged": 0, "failed": 0},
         "summary": {
-            "ndcg": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0, 20: 0.95, 50: 0.92, 100: 0.9},
-            "map": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0, 20: 0.95, 50: 0.92, 100: 0.9},
-            "recall": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0, 20: 0.95, 50: 0.92, 100: 0.9},
-            "precision": {1: 1.0, 3: 0.5, 5: 0.4, 10: 0.2, 20: 0.15, 50: 0.12, 100: 0.1},
-            "mrr": {10: 1.0, 20: 1.0, 50: 1.0, 100: 1.0},
+            "ndcg": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0},
+            "map": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0},
+            "recall": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0},
+            "precision": {1: 1.0, 3: 0.5, 5: 0.4, 10: 0.2},
+            "mrr": {10: 1.0},
         },
         "diagnostics": {
             "average_candidate_parents": 10.5,
@@ -315,7 +325,33 @@ def test_render_and_save_knowledge_beir_report(tmp_path: Path) -> None:
             "relevant_doc_in_candidate_parents_rate": 1.0,
             "relevant_doc_in_evidence_rate": 1.0,
         },
-        "cases": [],
+        "latency": {
+            "average_query_search_latency_seconds": 0.123,
+            "slowest_queries": [
+                {"query_id": "q2", "query": "shared", "query_search_latency_seconds": 0.234},
+                {"query_id": "q1", "query": "alpha", "query_search_latency_seconds": 0.123},
+            ],
+        },
+        "cases": [
+            {
+                "query_id": "q1",
+                "query": "alpha",
+                "gold_doc_ids": ["doc-alpha"],
+                "retrieved_doc_ids": ["doc-alpha"],
+                "top_candidate_parent_ids": [1],
+                "top_evidence_parent_ids": [1],
+                "top_evidence_child_ids": [1],
+                "evidence_doc_ids": ["doc-alpha"],
+                "query_search_latency_seconds": 0.123,
+                "metrics": {
+                    "support_available_in_candidates": True,
+                    "support_available_in_evidence": True,
+                    "relevant_retrieved_count": 1,
+                    "relevant_evidence_count": 1,
+                    "recall_at_doc_limit": 1.0,
+                },
+            }
+        ],
     }
 
     markdown = render_knowledge_beir_report_markdown(report)
@@ -327,8 +363,11 @@ def test_render_and_save_knowledge_beir_report(tmp_path: Path) -> None:
     assert "@3=`1.0000`" in markdown
     assert "@5=`1.0000`" in markdown
     assert "@10=`1.0000`" in markdown
-    assert "@20=`0.9500`" in markdown
-    assert "@50=`0.9200`" in markdown
-    assert "@100=`0.9000`" in markdown
+    assert "@20=" not in markdown
+    assert "@50=" not in markdown
+    assert "@100=" not in markdown
+    assert "Average query search latency" in markdown
+    assert "`0.123` seconds" in markdown
+    assert "`q2` `0.234`s shared" in markdown
     assert saved["json"].exists()
     assert saved["markdown"].exists()

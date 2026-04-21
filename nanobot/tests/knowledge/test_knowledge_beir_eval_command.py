@@ -44,11 +44,11 @@ def _fake_report() -> dict:
             "failed": 0,
         },
         "summary": {
-            "ndcg": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0, 20: 0.95, 50: 0.92, 100: 0.9},
-            "map": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0, 20: 0.95, 50: 0.92, 100: 0.9},
-            "recall": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0, 20: 0.95, 50: 0.92, 100: 0.9},
-            "precision": {1: 1.0, 3: 0.5, 5: 0.4, 10: 0.2, 20: 0.15, 50: 0.12, 100: 0.1},
-            "mrr": {10: 1.0, 20: 1.0, 50: 1.0, 100: 1.0},
+            "ndcg": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0},
+            "map": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0},
+            "recall": {1: 1.0, 3: 1.0, 5: 1.0, 10: 1.0},
+            "precision": {1: 1.0, 3: 0.5, 5: 0.4, 10: 0.2},
+            "mrr": {10: 1.0},
         },
         "diagnostics": {
             "average_candidate_parents": 10.5,
@@ -56,7 +56,32 @@ def _fake_report() -> dict:
             "relevant_doc_in_candidate_parents_rate": 1.0,
             "relevant_doc_in_evidence_rate": 1.0,
         },
-        "cases": [],
+        "latency": {
+            "average_query_search_latency_seconds": 0.123,
+            "slowest_queries": [
+                {"query_id": "q1", "query": "alpha", "query_search_latency_seconds": 0.123},
+            ],
+        },
+        "cases": [
+            {
+                "query_id": "q1",
+                "query": "alpha",
+                "gold_doc_ids": ["doc-alpha"],
+                "retrieved_doc_ids": ["doc-alpha"],
+                "top_candidate_parent_ids": [1],
+                "top_evidence_parent_ids": [1],
+                "top_evidence_child_ids": [1],
+                "evidence_doc_ids": ["doc-alpha"],
+                "query_search_latency_seconds": 0.123,
+                "metrics": {
+                    "support_available_in_candidates": True,
+                    "support_available_in_evidence": True,
+                    "relevant_retrieved_count": 1,
+                    "relevant_evidence_count": 1,
+                    "recall_at_doc_limit": 1.0,
+                },
+            }
+        ],
     }
 
 

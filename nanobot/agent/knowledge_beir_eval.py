@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote, unquote, urlsplit
@@ -22,8 +23,9 @@ _SUPPORTED_DATASETS = {DEFAULT_DATASET}
 _DEFAULT_DATASET_URLS = {
     "scifact": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip",
 }
-_METRIC_CUTOFFS = [1, 3, 5, 10, 20, 50, 100]
-_MRR_CUTOFFS = [10, 20, 50, 100]
+_METRIC_CUTOFFS = [1, 3, 5, 10]
+_MRR_CUTOFFS = [10]
+_SLOWEST_QUERY_COUNT = 5
 
 
 class EmbeddingBackend(Protocol):
@@ -143,6 +145,36 @@ def _aggregate_case_diagnostics(cases: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _aggregate_latency(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    if not cases:
+        return {
+            "average_query_search_latency_seconds": 0.0,
+            "slowest_queries": [],
+        }
+
+    slowest_queries = sorted(
+        (
+            {
+                "query_id": str(case["query_id"]),
+                "query": str(case["query"]),
+                "query_search_latency_seconds": float(case["query_search_latency_seconds"]),
+            }
+            for case in cases
+        ),
+        key=lambda item: (
+            -float(item["query_search_latency_seconds"]),
+            str(item["query_id"]),
+        ),
+    )[:_SLOWEST_QUERY_COUNT]
+
+    return {
+        "average_query_search_latency_seconds": (
+            sum(float(case["query_search_latency_seconds"]) for case in cases) / len(cases)
+        ),
+        "slowest_queries": slowest_queries,
+    }
+
+
 async def _run_knowledge_beir_eval_async(
     *,
     workspace: Path,
@@ -218,11 +250,13 @@ async def _run_knowledge_beir_eval_async(
     results: dict[str, dict[str, float]] = {}
     cases: list[dict[str, Any]] = []
     for qid, query_text in queries.items():
+        query_search_started_at = time.perf_counter()
         search_result = await service.search(
             str(query_text),
             doc_limit=doc_limit,
             evidence_limit=evidence_limit,
         )
+        query_search_latency_seconds = time.perf_counter() - query_search_started_at
         result_scores, retrieved_doc_ids = _build_results_payload(
             list(search_result["candidate_parents"]),
             dataset=dataset,
@@ -257,6 +291,7 @@ async def _run_knowledge_beir_eval_async(
                 "top_evidence_parent_ids": top_evidence_parent_ids,
                 "top_evidence_child_ids": top_evidence_child_ids,
                 "evidence_doc_ids": evidence_doc_ids,
+                "query_search_latency_seconds": query_search_latency_seconds,
                 "metrics": case_metrics,
             }
         )
@@ -286,6 +321,7 @@ async def _run_knowledge_beir_eval_async(
             "mrr": _normalize_metric_keys(mrr),
         },
         "diagnostics": _aggregate_case_diagnostics(cases),
+        "latency": _aggregate_latency(cases),
         "cases": cases,
     }
 
@@ -324,6 +360,7 @@ def run_knowledge_beir_eval(
 def render_knowledge_beir_report_markdown(report: dict[str, Any]) -> str:
     summary = report["summary"]
     diagnostics = report["diagnostics"]
+    latency = report["latency"]
     lines = [
         "# External Knowledge BEIR Report",
         "",
@@ -363,6 +400,20 @@ def render_knowledge_beir_report_markdown(report: dict[str, Any]) -> str:
             f"`{diagnostics['relevant_doc_in_candidate_parents_rate']:.3f}`"
         ),
         f"- Relevant doc in evidence rate: `{diagnostics['relevant_doc_in_evidence_rate']:.3f}`",
+        "",
+        "## Latency",
+        (
+            "- Average query search latency: "
+            f"`{latency['average_query_search_latency_seconds']:.3f}` seconds"
+        ),
+        "- Slowest queries:",
+        *[
+            (
+                f"- `{item['query_id']}` `{float(item['query_search_latency_seconds']):.3f}`s "
+                f"{item['query']}"
+            )
+            for item in latency["slowest_queries"]
+        ],
         "",
         "## Ingestion",
         f"- Inserted: `{report['ingestion_summary']['inserted']}`",
