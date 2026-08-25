@@ -22,7 +22,6 @@ poetry.lock
 botpy.log
 nano.*.save
 .DS_Store
-uv.lock
 user_guideline/
 # Local evaluation inputs and generated reports
 artifacts/
