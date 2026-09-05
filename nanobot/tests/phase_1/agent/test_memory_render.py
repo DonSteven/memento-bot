@@ -1,7 +1,7 @@
 # Phase 1 test content:
 # - verifies the legacy MEMORY.md and HISTORY.md views can be rendered from the new storage base
 # - verifies placeholder sections remain stable when a section has no canonical memories
-# - verifies write_views emits the rendered markdown into workspace memory files
+# - verifies the synchronizer emits rendered Markdown into workspace memory files
 # - verifies markdown rendering remains stable for empty text and sorting edge cases
 # How to test:
 # - run this file directly with:
@@ -12,12 +12,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from nanobot.agent.memory_db import (
     MemoryDatabase,
     MemoryRecord,
     MemorySnapshot,
-    parse_memory_markdown,
     render_history_markdown,
+)
+from nanobot.agent.memory_sync import (
+    MarkdownValidationError,
+    MemorySynchronizer,
+    parse_memory_markdown,
     render_memory_markdown,
 )
 
@@ -67,7 +73,7 @@ def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
             candidate_type=event.get("candidate_type") or "fixture",
         )
 
-    db.write_views()
+    MemorySynchronizer(db).sync()
 
     assert db.memory_file.read_text(encoding="utf-8") == fixture["expected_memory_markdown"]
     assert db.history_file.read_text(encoding="utf-8") == fixture["expected_history_markdown"]
@@ -84,32 +90,28 @@ def test_render_memory_markdown_all_sections_empty_uses_placeholders() -> None:
     assert "## Plans and Commitments\n\n(Future plans, commitments, deadlines, and to-dos)" in rendered
 
 
-def test_render_memory_markdown_ignores_empty_text_items() -> None:
-    rendered = render_memory_markdown([
-        {
-            "memory_id": "mem_empty",
-            "main_class": "preferences",
-            "sub_class": "reply_style",
-            "text": "   ",
-        }
-    ])
-
-    assert "## Preferences\n\n(How the user prefers to communicate and collaborate)" in rendered
-    assert "- reply_style:" not in rendered
+def test_render_memory_markdown_rejects_empty_text_items() -> None:
+    with pytest.raises(ValueError, match="non-empty"):
+        render_memory_markdown([
+            {
+                "memory_id": "mem_empty",
+                "main_class": "preferences",
+                "sub_class": "reply_style",
+                "text": "   ",
+            }
+        ])
 
 
-def test_render_memory_markdown_ignores_blank_subclass_items() -> None:
-    rendered = render_memory_markdown([
-        {
-            "memory_id": "mem_blank_subclass",
-            "main_class": "preferences",
-            "sub_class": "   ",
-            "text": "User prefers concise answers.",
-        }
-    ])
-
-    assert "## Preferences\n\n(How the user prefers to communicate and collaborate)" in rendered
-    assert "User prefers concise answers." not in rendered
+def test_render_memory_markdown_rejects_blank_subclass_items() -> None:
+    with pytest.raises(ValueError, match="sub_class"):
+        render_memory_markdown([
+            {
+                "memory_id": "mem_blank_subclass",
+                "main_class": "preferences",
+                "sub_class": "   ",
+                "text": "User prefers concise answers.",
+            }
+        ])
 
 
 def test_render_memory_markdown_sorts_stably_by_subclass_then_memory_id() -> None:
@@ -140,22 +142,13 @@ def test_render_memory_markdown_sorts_stably_by_subclass_then_memory_id() -> Non
     assert first < second < third
 
 
-def test_parse_memory_markdown_ignores_legacy_bullets_without_subclass() -> None:
-    parsed = parse_memory_markdown(
-        "# Long-term Memory\n\n"
-        "## Preferences\n\n"
-        "- User prefers concise answers.\n"
-        "- reply_style: User prefers bullet-point answers.\n"
+def test_parse_memory_markdown_rejects_legacy_bullets_without_subclass() -> None:
+    content = render_memory_markdown([]).replace(
+        "(How the user prefers to communicate and collaborate)",
+        "- User prefers concise answers.",
     )
-
-    assert parsed == [
-        {
-            "memory_id": parsed[0]["memory_id"],
-            "main_class": "preferences",
-            "sub_class": "reply_style",
-            "text": "User prefers bullet-point answers.",
-        }
-    ]
+    with pytest.raises(MarkdownValidationError, match="line 11"):
+        parse_memory_markdown(content)
 
 
 def test_render_history_markdown_filters_empty_entries_and_keeps_order() -> None:

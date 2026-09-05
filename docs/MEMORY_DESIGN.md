@@ -20,8 +20,11 @@ Extraction retains token-compression and `/new` triggers. A failed commit cannot
 advance the archive position or clear pending conversation history. Recent
 conversation can remain in session messages until an archive trigger occurs.
 
-`MEMORY.md` and `HISTORY.md` are exported views at this stage. Personal-memory
-vector retrieval and Markdown editing are subsequent roadmap stages.
+`MEMORY.md` supports complete, validated snapshot edits with stable IDs for
+unchanged facts. Revision checks and pending publication records detect conflicts
+and recover interrupted exports. `HISTORY.md` remains an exported view.
+See [Markdown synchronization](MEMORY_P2_IMPLEMENTATION.md). Personal-memory
+vector retrieval is a subsequent roadmap stage.
 
 See [the runtime contract](MEMORY_P1_IMPLEMENTATION.md) and
 [the implementation roadmap](MEMORY_KNOWLEDGE_IMPLEMENTATION_PLAN.md).

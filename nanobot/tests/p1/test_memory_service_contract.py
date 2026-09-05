@@ -111,7 +111,12 @@ async def test_committed_snapshot_reports_view_export_failure_without_losing_dat
         ],
     })
     service = MemoryService(tmp_path, provider, "test-model")
-    monkeypatch.setattr(service, "sync_markdown", lambda: (_ for _ in ()).throw(OSError("disk full")))
+    await service.sync_markdown()
+    monkeypatch.setattr(
+        service.synchronizer,
+        "publish_pending",
+        lambda: (_ for _ in ()).throw(OSError("disk full")),
+    )
 
     result = await service.consolidate(
         [{"role": "user", "content": "Be concise"}], session_key="cli:test",
@@ -122,7 +127,6 @@ async def test_committed_snapshot_reports_view_export_failure_without_losing_dat
     assert result.revision == 1
     assert service.database.read_snapshot().memories[0].text == "Be concise"
     assert len(service.database.list_raw_events()) == 1
-
 
 def test_context_builder_only_uses_prepared_memory_context(tmp_path) -> None:
     builder = ContextBuilder(tmp_path)
@@ -189,7 +193,12 @@ async def test_repeated_extraction_failure_raw_archives_without_changing_snapsho
 async def test_committed_view_failure_is_not_re_extracted(tmp_path, monkeypatch) -> None:
     provider = _provider({"history_entry": "[2026-09-05 10:00] saved", "canonical_memories": []})
     service = MemoryService(tmp_path, provider, "test-model")
-    monkeypatch.setattr(service, "sync_markdown", lambda: (_ for _ in ()).throw(OSError("disk full")))
+    await service.sync_markdown()
+    monkeypatch.setattr(
+        service.synchronizer,
+        "publish_pending",
+        lambda: (_ for _ in ()).throw(OSError("disk full")),
+    )
     consolidator = MemoryConsolidator(
         service,
         provider,

@@ -14,6 +14,8 @@ from typing import Any
 from aiohttp import web
 from loguru import logger
 
+from nanobot.agent.memory_sync import MarkdownValidationError, MemoryConflictError
+
 API_SESSION_KEY = "api:default"
 API_CHAT_ID = "default"
 
@@ -138,6 +140,9 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
 
             except asyncio.TimeoutError:
                 return _error_json(504, f"Request timed out after {timeout_s}s")
+            except (MarkdownValidationError, MemoryConflictError) as exc:
+                logger.warning("Memory synchronization failed for session {}: {}", session_key, exc)
+                return _error_json(409, str(exc), err_type="memory_sync_error")
             except Exception:
                 logger.exception("Error processing request for session {}", session_key)
                 return _error_json(500, "Internal server error", err_type="server_error")

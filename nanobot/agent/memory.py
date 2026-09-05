@@ -109,6 +109,8 @@ class MemoryConsolidator:
             last_result = await self.consolidate_messages(messages, session_key=session_key)
             if last_result.database_committed:
                 return last_result
+            if not last_result.retryable:
+                return last_result
         logger.warning("Memory extraction repeatedly failed; persisting raw archive")
         raw_result = await self.memory_service.archive_raw(messages, session_key=session_key)
         return raw_result if raw_result.database_committed else last_result or raw_result

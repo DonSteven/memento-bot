@@ -13,13 +13,13 @@ from typing import Any
 
 import pytest
 
-from nanobot.agent.memory_db import render_memory_markdown
 from nanobot.agent.memory_eval import (
     load_memory_extraction_cases,
     render_memory_extraction_report_markdown,
     run_memory_extraction_eval,
     save_memory_extraction_report,
 )
+from nanobot.agent.memory_sync import MarkdownValidationError, render_memory_markdown
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 
@@ -196,8 +196,17 @@ def test_run_memory_extraction_eval_scores_v2_snapshot_only() -> None:
     assert report["cases"][2]["v2"]["metrics"]["exact_match"] is True
 
 
-def test_run_memory_extraction_eval_loads_cases_path_and_injects_prior_memory(tmp_path) -> None:
+@pytest.mark.parametrize("formatting", ["canonical", "trailing_newline", "extra_blank_lines"])
+def test_run_memory_extraction_eval_loads_cases_path_and_injects_prior_memory(
+    tmp_path, formatting
+) -> None:
     cases = _build_cases()[1:2]
+    if formatting == "trailing_newline":
+        cases[0]["prior_memory_markdown"] += "\n"
+    elif formatting == "extra_blank_lines":
+        cases[0]["prior_memory_markdown"] = cases[0]["prior_memory_markdown"].replace(
+            "\n\n", "\n\n\n"
+        )
     cases_path = tmp_path / "memory_extraction_cases.json"
     cases_path.write_text(json.dumps({"cases": cases}, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -215,9 +224,10 @@ def test_run_memory_extraction_eval_loads_cases_path_and_injects_prior_memory(tm
     assert len(v2_requests) == 1
     v2_prompt = v2_requests[0][1]["content"]
     assert "User prefers concise answers." in v2_prompt
+    assert report["metrics"]["exact_match_rate"] == pytest.approx(1.0)
 
 
-def test_run_memory_extraction_eval_ignores_legacy_prior_markdown_without_subclass(tmp_path) -> None:
+def test_run_memory_extraction_eval_rejects_legacy_prior_markdown_without_subclass(tmp_path) -> None:
     cases = _build_cases()[1:2]
     cases[0]["prior_memory_markdown"] = (
         "# Long-term Memory\n\n"
@@ -225,17 +235,12 @@ def test_run_memory_extraction_eval_ignores_legacy_prior_markdown_without_subcla
         "- User prefers concise answers.\n"
     )
 
-    v2_requests: list[list[dict[str, Any]]] = []
-    report = run_memory_extraction_eval(
-        cases=cases,
-        v2_provider_factory=lambda case: _v2_factory(case, request_log=v2_requests),
-        model="test-model",
-    )
-
-    assert len(v2_requests) == 1
-    v2_prompt = v2_requests[0][1]["content"]
-    assert "User prefers concise answers." not in v2_prompt
-    assert report["cases"][0]["prior_snapshot"] == []
+    with pytest.raises(MarkdownValidationError, match="canonical order"):
+        run_memory_extraction_eval(
+            cases=cases,
+            v2_provider_factory=lambda case: _v2_factory(case),
+            model="test-model",
+        )
 
 
 def test_render_and_save_memory_extraction_report(tmp_path) -> None:

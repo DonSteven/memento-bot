@@ -17,7 +17,7 @@ P1 replaces the former runtime modes with one SQLite-backed structured memory pa
 
 There is no `memory.mode` setting. Supplying it is a configuration error. All CLI, gateway, OpenAI-compatible serve, and SDK entry points use the structured path.
 
-P1 does not import manual edits from `MEMORY.md`, perform vector retrieval, or change Chinese FTS tokenization. Those capabilities remain assigned to later phases.
+Markdown synchronization is described in [P2](MEMORY_P2_IMPLEMENTATION.md). Semantic retrieval and bilingual tokenization are subsequent stages.
 
 Memory extraction is triggered only by token-based context compression and `/new`; it is not run after every conversational turn.
 

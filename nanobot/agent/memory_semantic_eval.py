@@ -11,6 +11,7 @@ from typing import Any, Protocol
 
 from nanobot.agent.memory_db import MemoryDatabase, MemoryRecord, MemorySnapshot
 from nanobot.agent.memory_service import MemoryService
+from nanobot.agent.memory_sync import MemorySynchronizer
 
 REPORT_VERSION = 1
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -801,7 +802,7 @@ def _inject_prior_snapshot(workspace: Path, snapshot: list[dict[str, str]]) -> N
         ts="1970-01-01T00:00:00", session_key="eval", history_text="",
         candidate_type="fixture",
     )
-    db.write_views()
+    MemorySynchronizer(db).sync()
 
 
 async def _run_semantic_case(

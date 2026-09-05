@@ -34,8 +34,14 @@ _SAVE_MEMORY_STRUCTURED_TOOL = [
                                         "projects", "daily_life", "plans_commitments",
                                     ],
                                 },
-                                "sub_class": {"type": "string"},
-                                "text": {"type": "string"},
+                                "sub_class": {
+                                    "type": "string",
+                                    "description": "A non-empty single-line label without the delimiter ': '.",
+                                },
+                                "text": {
+                                    "type": "string",
+                                    "description": "One non-empty single-line fact, without line breaks.",
+                                },
                             },
                             "required": ["main_class", "sub_class", "text"],
                         },

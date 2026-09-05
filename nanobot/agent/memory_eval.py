@@ -15,11 +15,14 @@ from nanobot.agent.context import ContextBuilder
 from nanobot.agent.memory import MemoryConsolidator
 from nanobot.agent.memory_db import (
     MemoryDatabase,
-    MemoryRecord,
     MemorySnapshot,
-    parse_memory_markdown,
 )
 from nanobot.agent.memory_service import MemoryService
+from nanobot.agent.memory_sync import (
+    MemorySynchronizer,
+    parse_memory_markdown,
+    render_memory_markdown,
+)
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from nanobot.session.manager import Session, SessionManager
 
@@ -387,7 +390,6 @@ def save_phase6_report(report: dict[str, Any], save_dir: Path) -> dict[str, Path
     markdown_path.write_text(render_phase6_report_markdown(report), encoding="utf-8")
     return {"json": json_path, "markdown": markdown_path}
 
-
 # ============================================================================
 # Memory Extraction Evaluation
 # ============================================================================
@@ -566,20 +568,18 @@ def _inject_prior_memory(workspace: Path, prior_memory_markdown: str) -> None:
     snapshot = parse_memory_markdown(prior_memory_markdown)
     memory_dir = workspace / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
-    (memory_dir / "MEMORY.md").write_text(prior_memory_markdown, encoding="utf-8")
+    (memory_dir / "MEMORY.md").write_text(
+        render_memory_markdown(snapshot), encoding="utf-8"
+    )
     if snapshot:
         db = MemoryDatabase(workspace)
         db.initialize()
-        records = tuple(
-            MemoryRecord.create(item["main_class"], item["sub_class"], item["text"])
-            for item in snapshot
-        )
         db.commit_snapshot(
-            MemorySnapshot(0, records), expected_revision=0, event_id="eval-seed",
+            MemorySnapshot(0, snapshot), expected_revision=0, event_id="eval-seed",
             ts="1970-01-01T00:00:00", session_key="eval", history_text="",
             candidate_type="fixture",
         )
-        db.write_views()
+        MemorySynchronizer(db).sync()
 
 
 async def _run_v2_memory_extraction_case(
@@ -687,8 +687,16 @@ async def _run_memory_extraction_eval_async(
     for raw_case in cases:
         case = dict(raw_case)
         prior_markdown = str(case.get("prior_memory_markdown") or "")
+        parsed_prior = parse_memory_markdown(prior_markdown) if prior_markdown.strip() else ()
         prior_snapshot = _normalize_memory_snapshot(
-            parse_memory_markdown(prior_markdown) if prior_markdown.strip() else []
+            [
+                {
+                    "main_class": item.main_class,
+                    "sub_class": item.sub_class,
+                    "text": item.text,
+                }
+                for item in parsed_prior
+            ]
         )
         gold_snapshot = _normalize_memory_snapshot(case.get("gold_snapshot") or [])
 

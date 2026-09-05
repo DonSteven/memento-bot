@@ -110,7 +110,7 @@ async def test_empty_conversation_does_not_call_provider_or_write(tmp_path):
     service.pipeline.provider.chat_with_retry.assert_not_awaited()
     assert service.database.read_snapshot() == MemorySnapshot(0)
     assert service.database.list_raw_events() == []
-    assert not service.database.memory_file.exists()
+    assert service.database.memory_file.exists()
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from nanobot.agent.knowledge import WebKnowledgeHook, WebKnowledgeService
 from nanobot.agent.memory import MemoryConsolidator
 from nanobot.agent.memory_service import MemoryService
+from nanobot.agent.memory_sync import MarkdownValidationError, MemoryConflictError
 from nanobot.agent.runner import AgentRunSpec, AgentRunner
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
@@ -459,6 +460,12 @@ class AgentLoop:
             except asyncio.CancelledError:
                 logger.info("Task cancelled for session {}", msg.session_key)
                 raise
+            except (MarkdownValidationError, MemoryConflictError) as exc:
+                logger.warning("Memory synchronization failed for session {}: {}", msg.session_key, exc)
+                await self.bus.publish_outbound(OutboundMessage(
+                    channel=msg.channel, chat_id=msg.chat_id,
+                    content=f"Memory synchronization failed: {exc}",
+                ))
             except Exception:
                 logger.exception("Error processing message for session {}", msg.session_key)
                 await self.bus.publish_outbound(OutboundMessage(
