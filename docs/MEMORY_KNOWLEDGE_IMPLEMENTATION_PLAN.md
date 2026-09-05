@@ -26,7 +26,7 @@ real-model quality and parameter calibration require separate evaluation.
 
 | Stage | Status | Outcome |
 | --- | --- | --- |
-| P1 | Planned | Unified memory service, revisioned writes and prepared context |
+| P1 | Complete | Unified memory service, revisioned writes and prepared context |
 | P2 | Planned | Validated Markdown synchronization and conflict recovery |
 | P3 | Planned | Incremental semantic memory indexes and bilingual retrieval |
 | P4 | Planned | Evidence selection and structured sufficiency assessment |

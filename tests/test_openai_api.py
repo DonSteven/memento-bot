@@ -235,15 +235,16 @@ async def test_followup_requests_share_same_session_key(aiohttp_client) -> None:
 @pytest.mark.asyncio
 async def test_fixed_session_requests_are_serialized(aiohttp_client) -> None:
     order: list[str] = []
-    barrier = asyncio.Event()
+    active = 0
+    max_active = 0
 
     async def slow_process(content, session_key="", channel="", chat_id=""):
+        nonlocal active, max_active
         order.append(f"start:{content}")
-        if content == "first":
-            barrier.set()
-            await asyncio.sleep(0.1)
-        else:
-            await barrier.wait()
+        active += 1
+        max_active = max(max_active, active)
+        await asyncio.sleep(0.05)
+        active -= 1
         order.append(f"end:{content}")
         return content
 
@@ -264,7 +265,11 @@ async def test_fixed_session_requests_are_serialized(aiohttp_client) -> None:
     r1, r2 = await asyncio.gather(send("first"), send("second"))
     assert r1.status == 200
     assert r2.status == 200
-    assert order.index("end:first") < order.index("start:second")
+    assert max_active == 1
+    assert order in [
+        ["start:first", "end:first", "start:second", "end:second"],
+        ["start:second", "end:second", "start:first", "end:first"],
+    ]
 
 
 @pytest.mark.skipif(not HAS_AIOHTTP, reason="aiohttp not installed")

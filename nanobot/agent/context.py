@@ -8,7 +8,7 @@ from typing import Any
 
 from nanobot.utils.helpers import current_time_str
 
-from nanobot.agent.memory import MemoryStore
+from nanobot.agent.memory_db import MemoryContext
 from nanobot.agent.skills import SkillsLoader
 from nanobot.utils.helpers import build_assistant_message, detect_image_mime
 
@@ -23,19 +23,17 @@ class ContextBuilder:
         self,
         workspace: Path,
         timezone: str | None = None,
-        memory_mode: str = "legacy",
         knowledge_enabled: bool = False,
     ):
         self.workspace = workspace
         self.timezone = timezone
         self.knowledge_enabled = knowledge_enabled
-        self.memory = MemoryStore(workspace, mode=memory_mode)
         self.skills = SkillsLoader(workspace)
 
     def build_system_prompt(
         self,
         skill_names: list[str] | None = None,
-        current_message: str | None = None,
+        memory_context: MemoryContext | None = None,
     ) -> str:
         """Build the system prompt from identity, bootstrap files, memory, and skills."""
         parts = [self._get_identity()] # 构建身份信息认知部分
@@ -44,7 +42,7 @@ class ContextBuilder:
         if bootstrap:
             parts.append(bootstrap)
 
-        memory = self.memory.get_prompt_memory(current_message=current_message) # 获取 Memory.md 全文；v2 模式下会根据 current_message 做相关性检索并返回相关记忆的组合文本
+        memory = memory_context.render() if memory_context is not None else ""
         if memory:
             parts.append(f"# Memory\n\n{memory}")
 
@@ -154,6 +152,7 @@ IMPORTANT: To send files (images, documents, audio, video) to the user, you MUST
         channel: str | None = None, # 当前消息来自哪个渠道
         chat_id: str | None = None,
         current_role: str = "user", # 有些场景可能不是用户，比如系统消息、subagent 消息
+        memory_context: MemoryContext | None = None,
     ) -> list[dict[str, Any]]: # 输出为标准的大模型消息列表
         """Build the complete message list for an LLM call."""
         runtime_ctx = self._build_runtime_context(channel, chat_id, self.timezone)
@@ -173,7 +172,7 @@ IMPORTANT: To send files (images, documents, audio, video) to the user, you MUST
             merged = [{"type": "text", "text": runtime_ctx}] + user_content # 当前这一轮发给agent的“最终消息内容”
 
         return [
-            {"role": "system", "content": self.build_system_prompt(skill_names, current_message=current_message)},
+            {"role": "system", "content": self.build_system_prompt(skill_names, memory_context)},
             *history,
             {"role": current_role, "content": merged},
         ]

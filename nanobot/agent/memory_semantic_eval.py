@@ -9,8 +9,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Protocol
 
-from nanobot.agent.memory import MemoryStore
-
+from nanobot.agent.memory_db import MemoryDatabase, MemoryRecord, MemorySnapshot
+from nanobot.agent.memory_service import MemoryService
 
 REPORT_VERSION = 1
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -790,10 +790,18 @@ def _aggregate_group(case_results: list[dict[str, Any]]) -> dict[str, Any]:
 def _inject_prior_snapshot(workspace: Path, snapshot: list[dict[str, str]]) -> None:
     if not snapshot:
         return
-    store = MemoryStore(workspace, mode="v2")
-    assert store.v2_db is not None
-    store.v2_db.replace_canonical_snapshot(snapshot)
-    store.v2_db.write_views()
+    db = MemoryDatabase(workspace)
+    db.initialize()
+    records = tuple(
+        MemoryRecord.create(item["main_class"], item["sub_class"], item["text"])
+        for item in snapshot
+    )
+    db.commit_snapshot(
+        MemorySnapshot(0, records), expected_revision=0, event_id="eval-seed",
+        ts="1970-01-01T00:00:00", session_key="eval", history_text="",
+        candidate_type="fixture",
+    )
+    db.write_views()
 
 
 async def _run_semantic_case(
@@ -807,15 +815,15 @@ async def _run_semantic_case(
         workspace = Path(tmp)
         _inject_prior_snapshot(workspace, case["prior_snapshot"])
 
-        store = MemoryStore(workspace, mode="v2")
-        result = await store.consolidate(case["conversation"], provider, model)
-        memory_text = store.memory_file.read_text(encoding="utf-8") if store.memory_file.exists() else ""
-        history_text = store.history_file.read_text(encoding="utf-8") if store.history_file.exists() else ""
-        assert store.v2_db is not None
-        predicted_snapshot = _normalize_snapshot(store.v2_db.list_canonical_memories())
+        service = MemoryService(workspace, provider, model)
+        result = await service.consolidate(case["conversation"], session_key="eval")
+        db = service.database
+        memory_text = db.memory_file.read_text(encoding="utf-8") if db.memory_file.exists() else ""
+        history_text = db.history_file.read_text(encoding="utf-8") if db.history_file.exists() else ""
+        predicted_snapshot = _normalize_snapshot(db.list_canonical_memories())
 
         return {
-            "consolidate_returned_true": result is True,
+            "consolidate_returned_true": result.database_committed,
             "raw_archive_detected": "[RAW]" in history_text,
             "predicted_snapshot": predicted_snapshot,
             "rendered_memory_markdown": memory_text,

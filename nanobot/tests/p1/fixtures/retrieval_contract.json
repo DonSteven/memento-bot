@@ -1,0 +1,25 @@
+{
+  "query": "nanobot",
+  "retrieval_budget": 4,
+  "core_classes": ["personal_profile", "preferences", "constraints"],
+  "dynamic_classes": ["projects", "daily_life", "plans_commitments"],
+  "expected": {
+    "core_count": 6,
+    "retrieved_count": 4,
+    "core_ids": [
+      "personal_profile-0",
+      "personal_profile-1",
+      "preferences-0",
+      "preferences-1",
+      "constraints-0",
+      "constraints-1"
+    ],
+    "retrieved_ids": [
+      "projects-0",
+      "projects-1",
+      "daily_life-0",
+      "daily_life-1"
+    ]
+  },
+  "notes": "Retrieved ID order is the deterministic SQLite bm25 and tie-break order for this fixture. Core records do not consume the dynamic limit."
+}

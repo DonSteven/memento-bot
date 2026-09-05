@@ -16,6 +16,7 @@ from nanobot.agent.context import ContextBuilder
 from nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from nanobot.agent.knowledge import WebKnowledgeHook, WebKnowledgeService
 from nanobot.agent.memory import MemoryConsolidator
+from nanobot.agent.memory_service import MemoryService
 from nanobot.agent.runner import AgentRunSpec, AgentRunner
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
@@ -175,7 +176,6 @@ class AgentLoop:
         channels_config: ChannelsConfig | None = None,
         timezone: str | None = None,
         hooks: list[AgentHook] | None = None,
-        memory_mode: str = "legacy",
         knowledge_config: KnowledgeConfig | None = None,
         knowledge_api_key: str | None = None,
     ):
@@ -193,7 +193,6 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
-        self.memory_mode = memory_mode
         self.knowledge_config = knowledge_config or KnowledgeConfig()
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
@@ -201,11 +200,9 @@ class AgentLoop:
         self._extra_hooks: list[AgentHook] = hooks or []
 
         self.context = ContextBuilder(
-            workspace,
-            timezone=timezone,
-            memory_mode=memory_mode,
-            knowledge_enabled=self.knowledge_config.enabled,
+            workspace, timezone=timezone, knowledge_enabled=self.knowledge_config.enabled,
         )
+        self.memory_service = MemoryService(workspace, provider, self.model)
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.runner = AgentRunner(provider)
@@ -247,7 +244,7 @@ class AgentLoop:
                 )
             )
         self.memory_consolidator = MemoryConsolidator(
-            workspace=workspace,
+            memory_service=self.memory_service,
             provider=provider,
             model=self.model,
             sessions=self.sessions,
@@ -255,7 +252,6 @@ class AgentLoop:
             build_messages=self.context.build_messages,
             get_tool_definitions=self.tools.get_definitions,
             max_completion_tokens=provider.generation.max_tokens,
-            mode=memory_mode,
         )
         self._register_default_tools()
         self.commands = CommandRouter()
@@ -509,7 +505,10 @@ class AgentLoop:
             logger.info("Processing system message from {}", msg.sender_id)
             key = f"{channel}:{chat_id}"
             session = self.sessions.get_or_create(key)
-            await self.memory_consolidator.maybe_consolidate_by_tokens(session)
+            memory_context = await self.memory_service.prepare_context(msg.content)
+            memory_context = await self.memory_consolidator.maybe_consolidate_by_tokens(
+                session, memory_context, query=msg.content, current_message=msg.content,
+            )
             self._set_tool_context(channel, chat_id, msg.metadata.get("message_id"))
             history = session.get_history(max_messages=0)
             current_role = "assistant" if msg.sender_id == "subagent" else "user"
@@ -517,6 +516,7 @@ class AgentLoop:
                 history=history,
                 current_message=msg.content, channel=channel, chat_id=chat_id,
                 current_role=current_role,
+                memory_context=memory_context,
             )
             final_content, _, all_msgs = await self._run_agent_loop(
                 messages, channel=channel, chat_id=chat_id,
@@ -524,7 +524,9 @@ class AgentLoop:
             )
             self._save_turn(session, all_msgs, 1 + len(history))
             self.sessions.save(session)
-            self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
+            self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(
+                session, memory_context, query=msg.content,
+            ))
             return OutboundMessage(channel=channel, chat_id=chat_id,
                                   content=final_content or "Background task completed.")
 
@@ -540,7 +542,10 @@ class AgentLoop:
         if result := await self.commands.dispatch(ctx):
             return result
 
-        await self.memory_consolidator.maybe_consolidate_by_tokens(session)
+        memory_context = await self.memory_service.prepare_context(msg.content)
+        memory_context = await self.memory_consolidator.maybe_consolidate_by_tokens(
+            session, memory_context, query=msg.content, current_message=msg.content,
+        )
 
         self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"))
         if message_tool := self.tools.get("message"):
@@ -553,6 +558,7 @@ class AgentLoop:
             current_message=msg.content,
             media=msg.media if msg.media else None,
             channel=msg.channel, chat_id=msg.chat_id,
+            memory_context=memory_context,
         )
 
         async def _bus_progress(content: str, *, tool_hint: bool = False) -> None:
@@ -577,7 +583,9 @@ class AgentLoop:
 
         self._save_turn(session, all_msgs, 1 + len(history))
         self.sessions.save(session)
-        self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(session))
+        self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(
+            session, memory_context, query=msg.content,
+        ))
 
         if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
             return None

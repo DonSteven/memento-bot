@@ -285,7 +285,7 @@ def test_seed_snapshot_writes_db_and_views(tmp_path: Path) -> None:
     db = query_eval.MemoryDatabase(tmp_path)
 
     assert seeded == snapshot
-    assert db.query_canonical_memories("applied cartography", limit=5)[0]["text"] == snapshot[0]["text"]
+    assert db.read_core_memories()[0].text == snapshot[0]["text"]
     assert "User prefers concise answers." in db.memory_file.read_text(encoding="utf-8")
 
 
@@ -353,11 +353,11 @@ def test_run_memory_v2_query_eval_snapshot_mode_scores_retrieval_answer_without_
 
     assert report["evaluation"] == "memory_v2_query"
     assert report["mode"] == "snapshot"
-    assert report["memory_mode"] == "v2"
     assert report["total_cases"] == 2
     assert report["summary"]["overall"]["answer_accuracy"] == pytest.approx(1.0)
     assert report["summary"]["overall"]["answer_judge_pass_rate"] == pytest.approx(0.5)
-    assert report["summary"]["overall"]["support_hit_at_k"] == pytest.approx(1.0)
+    assert report["summary"]["overall"]["support_hit_at_k"] == pytest.approx(0.5)
+    assert report["summary"]["overall"]["core_only_rescue_rate"] == pytest.approx(0.5)
     assert report["summary"]["overall"]["stale_exposed_rate"] is None
     assert report["cases"][0]["metrics"]["answer_score_method"] == "judge"
     assert report["cases"][0]["retrieval_source_mode"] == "snapshot"

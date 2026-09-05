@@ -550,7 +550,6 @@ def serve(
         mcp_servers=runtime_config.tools.mcp_servers,
         channels_config=runtime_config.channels,
         timezone=runtime_config.agents.defaults.timezone,
-        memory_mode=runtime_config.memory.mode,
         knowledge_config=runtime_config.knowledge,
         knowledge_api_key=runtime_config.providers.dashscope.api_key,
     )
@@ -641,7 +640,6 @@ def gateway(
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
         timezone=config.agents.defaults.timezone,
-        memory_mode=config.memory.mode,
         knowledge_config=config.knowledge,
         knowledge_api_key=config.providers.dashscope.api_key,
     )
@@ -850,7 +848,6 @@ def agent(
         mcp_servers=config.tools.mcp_servers,
         channels_config=config.channels,
         timezone=config.agents.defaults.timezone,
-        memory_mode=config.memory.mode,
         knowledge_config=config.knowledge,
         knowledge_api_key=config.providers.dashscope.api_key,
     )

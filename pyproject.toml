@@ -134,7 +134,7 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "nanobot/tests"]
 
 [tool.coverage.run]
 source = ["nanobot"]

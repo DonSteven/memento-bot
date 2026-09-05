@@ -22,17 +22,17 @@ def test_run_phase6_ablation_returns_fixed_format_report() -> None:
 
     assert report["report_version"] == 1
     assert report["summary"] == {
-        "passed": 5,
+        "passed": 3,
         "failed": 0,
-        "not_implemented": 2,
-        "total": 7,
+        "not_implemented": 0,
+        "total": 3,
     }
-    assert report["mode_summary"]["legacy"]["status"] == "passed"
-    assert report["mode_summary"]["v2"]["status"] == "passed"
+    assert report["mode_summary"]["structured"]["status"] == "passed"
+    assert "v2" not in report["mode_summary"]
     assert "fts" not in report["mode_summary"]
-    assert report["mode_summary"]["vec"]["status"] == "not_implemented"
-    assert report["mode_summary"]["hybrid"]["status"] == "not_implemented"
-    assert len(report["results"]) == 7
+    assert "vec" not in report["mode_summary"]
+    assert "hybrid" not in report["mode_summary"]
+    assert len(report["results"]) == 3
 
 
 def test_render_phase6_report_markdown_contains_fixed_sections() -> None:
@@ -43,12 +43,11 @@ def test_render_phase6_report_markdown_contains_fixed_sections() -> None:
     assert "# Memory Phase 6 Ablation Report" in rendered
     assert "## Mode Summary" in rendered
     assert "## Scenario Results" in rendered
-    assert "| legacy | passed |" in rendered
-    assert "| v2 | passed |" in rendered
-    assert "v2_persistence_replay" in rendered
-    assert "v2_retrieval_replay" in rendered
+    assert "| structured | passed |" in rendered
+    assert "structured_persistence_replay" in rendered
+    assert "structured_retrieval_replay" in rendered
     assert "| fts |" not in rendered
-    assert "| vec | not_implemented |" in rendered
+    assert "| vec |" not in rendered
 
 
 def test_save_phase6_report_writes_json_and_markdown(tmp_path) -> None:

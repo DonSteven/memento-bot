@@ -47,7 +47,8 @@ async def cmd_status(ctx: CommandContext) -> OutboundMessage:
     session = ctx.session or loop.sessions.get_or_create(ctx.key)
     ctx_est = 0
     try:
-        ctx_est, _ = loop.memory_consolidator.estimate_session_prompt_tokens(session)
+        memory_context = await loop.memory_service.prepare_context("")
+        ctx_est, _ = loop.memory_consolidator.estimate_session_prompt_tokens(session, memory_context)
     except Exception:
         pass
     if ctx_est <= 0:
@@ -70,15 +71,27 @@ async def cmd_new(ctx: CommandContext) -> OutboundMessage:
     """Start a fresh session."""
     loop = ctx.loop
     session = ctx.session or loop.sessions.get_or_create(ctx.key)
-    snapshot = session.messages[session.last_consolidated:]
-    session.clear()
-    loop.sessions.save(session)
-    loop.sessions.invalidate(session.key)
-    if snapshot:
-        loop._schedule_background(loop.memory_consolidator.archive_messages(snapshot))
+    async with loop.memory_consolidator.get_lock(session.key):
+        snapshot = session.messages[session.last_consolidated:]
+        result = await loop.memory_consolidator.archive_messages(
+            snapshot, session_key=session.key,
+        )
+        if not result.database_committed:
+            return OutboundMessage(
+                channel=ctx.msg.channel,
+                chat_id=ctx.msg.chat_id,
+                content=f"Could not start a new session because memory archival failed: {result.error}",
+            )
+        session.clear()
+        loop.sessions.save(session)
+        loop.sessions.invalidate(session.key)
     return OutboundMessage(
         channel=ctx.msg.channel, chat_id=ctx.msg.chat_id,
-        content="New session started.",
+        content=(
+            "New session started."
+            if result.view_exported
+            else "New session started; memory was saved, but the Markdown view could not be exported."
+        ),
     )
 
 

@@ -163,8 +163,6 @@ class MemoryConfig(Base):
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["legacy", "v2"] = "legacy"
-
 
 class KnowledgeEmbeddingConfig(Base):
     """Embedding API used by the external web knowledge base."""

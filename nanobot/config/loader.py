@@ -1,5 +1,4 @@
 """Configuration loading utilities."""
-"""2. 负责把配置文件读进来，填成“表格”对象"""
 import json
 from pathlib import Path
 
@@ -41,6 +40,12 @@ def load_config(config_path: Path | None = None) -> Config:
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
+            memory_config = data.get("memory") if isinstance(data, dict) else None
+            if isinstance(memory_config, dict) and "mode" in memory_config:
+                raise RuntimeError(
+                    "The memory.mode setting was removed. Remove it from the config; "
+                    "structured SQLite memory is now the only runtime path."
+                )
             data = _migrate_config(data) # 迁移旧配置格式到新格式
             return Config.model_validate(data) # 把字典数据变成 Config 对象，验证字段类型和必填项
         except (json.JSONDecodeError, ValueError, pydantic.ValidationError) as e:

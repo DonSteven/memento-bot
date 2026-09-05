@@ -1,10 +1,12 @@
 """Test session management with cache-friendly message handling."""
 
 import asyncio
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pathlib import Path
+
+from nanobot.agent.memory_db import MemoryWriteResult
 from nanobot.session.manager import Session, SessionManager
 
 # Test constants
@@ -518,10 +520,10 @@ class TestNewCommandArchival:
 
         call_count = 0
 
-        async def _failing_consolidate(_messages) -> bool:
+        async def _failing_consolidate(_messages, *, session_key) -> bool:
             nonlocal call_count
             call_count += 1
-            return False
+            return MemoryWriteResult(False, False)
 
         loop.memory_consolidator.consolidate_messages = _failing_consolidate  # type: ignore[method-assign]
 
@@ -551,10 +553,10 @@ class TestNewCommandArchival:
 
         archived_count = -1
 
-        async def _fake_consolidate(messages) -> bool:
+        async def _fake_consolidate(messages, *, session_key) -> bool:
             nonlocal archived_count
             archived_count = len(messages)
-            return True
+            return MemoryWriteResult(True, True)
 
         loop.memory_consolidator.consolidate_messages = _fake_consolidate  # type: ignore[method-assign]
 
@@ -578,8 +580,8 @@ class TestNewCommandArchival:
             session.add_message("assistant", f"resp{i}")
         loop.sessions.save(session)
 
-        async def _ok_consolidate(_messages) -> bool:
-            return True
+        async def _ok_consolidate(_messages, *, session_key) -> bool:
+            return MemoryWriteResult(True, True)
 
         loop.memory_consolidator.consolidate_messages = _ok_consolidate  # type: ignore[method-assign]
 
@@ -604,16 +606,16 @@ class TestNewCommandArchival:
 
         archived = asyncio.Event()
 
-        async def _slow_consolidate(_messages) -> bool:
+        async def _slow_consolidate(_messages, *, session_key) -> bool:
             await asyncio.sleep(0.1)
             archived.set()
-            return True
+            return MemoryWriteResult(True, True)
 
         loop.memory_consolidator.consolidate_messages = _slow_consolidate  # type: ignore[method-assign]
 
         new_msg = InboundMessage(channel="cli", sender_id="user", chat_id="test", content="/new")
         await loop._process_message(new_msg)
 
-        assert not archived.is_set()
+        assert archived.is_set()
         await loop.close_mcp()
         assert archived.is_set()

@@ -1,6 +1,6 @@
 ---
 name: memory
-description: Two-layer memory system with grep-based recall.
+description: Structured personal memory with core injection and dynamic FTS recall.
 always: true
 ---
 
@@ -8,8 +8,11 @@ always: true
 
 ## Structure
 
-- `memory/MEMORY.md` — Long-term facts (preferences, project context, relationships). Always loaded into your context.
-- `memory/HISTORY.md` — Append-only event log. NOT loaded into context. Search it with grep-style tools or in-memory filters. Each entry starts with [YYYY-MM-DD HH:MM].
+- `memory/memory.db` — Source of truth for structured memories and history events.
+- `memory/MEMORY.md` — Generated complete view of the six memory categories. In P1, manual edits are not imported.
+- `memory/HISTORY.md` — Generated event-log view. It is not loaded into context or used as an edit source.
+
+The `personal_profile`, `preferences`, and `constraints` categories are always loaded in full. `projects`, `daily_life`, and `plans_commitments` are selected by FTS for the current query.
 
 ## Search Past Events
 
@@ -25,13 +28,8 @@ Examples:
 
 Prefer targeted command-line search for large history files.
 
-## When to Update MEMORY.md
-
-Write important facts immediately using `edit_file` or `write_file`:
-- User preferences ("I prefer dark mode")
-- Project context ("The API uses OAuth2")
-- Relationships ("Alice is the project lead")
-
 ## Auto-consolidation
 
-Old conversations are automatically summarized and appended to HISTORY.md when the session grows large. Long-term facts are extracted to MEMORY.md. You don't need to manage this.
+Old conversations are consolidated when the session grows too large or when `/new` starts a fresh session. Recent short conversations remain only in session history until one of those triggers runs. Consolidation commits the event and complete memory snapshot to SQLite, then regenerates both Markdown views.
+
+Do not edit either Markdown view in P1: bidirectional `MEMORY.md` synchronization is planned for P2.

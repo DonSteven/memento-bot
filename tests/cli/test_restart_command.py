@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nanobot.bus.events import InboundMessage, OutboundMessage
+from nanobot.agent.memory_db import MemoryContext
+from nanobot.bus.events import InboundMessage
 from nanobot.providers.base import LLMResponse
 
 
@@ -24,9 +25,11 @@ def _make_loop():
     workspace.__truediv__ = MagicMock(return_value=MagicMock())
 
     with patch("nanobot.agent.loop.ContextBuilder"), \
+         patch("nanobot.agent.loop.MemoryService"), \
          patch("nanobot.agent.loop.SessionManager"), \
          patch("nanobot.agent.loop.SubagentManager"):
         loop = AgentLoop(bus=bus, provider=provider, workspace=workspace)
+    loop.memory_service.prepare_context = AsyncMock(return_value=MemoryContext())
     return loop, bus
 
 
@@ -136,6 +139,10 @@ class TestRestartCommand:
         response = await loop._process_message(msg)
 
         assert response is not None
+        loop.memory_service.prepare_context.assert_awaited_once_with("")
+        loop.memory_consolidator.estimate_session_prompt_tokens.assert_called_once_with(
+            session, loop.memory_service.prepare_context.return_value,
+        )
         assert "Model: test-model" in response.content
         assert "Tokens: 0 in / 0 out" in response.content
         assert "Context: 20k/64k (31%)" in response.content

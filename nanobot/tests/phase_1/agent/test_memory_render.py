@@ -14,6 +14,8 @@ from pathlib import Path
 
 from nanobot.agent.memory_db import (
     MemoryDatabase,
+    MemoryRecord,
+    MemorySnapshot,
     parse_memory_markdown,
     render_history_markdown,
     render_memory_markdown,
@@ -45,23 +47,24 @@ def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
     fixture = _load_fixture("render_views")
     db = MemoryDatabase(tmp_path)
 
+    db.initialize()
+    records = tuple(
+        MemoryRecord(
+            memory["memory_id"], memory["main_class"], memory["sub_class"], memory["text"]
+        )
+        for memory in fixture["canonical_memories"]
+    )
+    revision = 0
     for event in fixture["raw_events"]:
-        db.insert_raw_event(
+        revision = db.commit_snapshot(
+            MemorySnapshot(revision, records),
+            expected_revision=revision,
             event_id=event["event_id"],
             ts=event["ts"],
             session_key=event["session_key"],
             history_text=event["history_text"],
             plain_text=event.get("plain_text", ""),
-            main_class=event.get("main_class"),
-            sub_class=event.get("sub_class"),
-            candidate_type=event.get("candidate_type"),
-        )
-    for memory in fixture["canonical_memories"]:
-        db.upsert_canonical_memory(
-            memory_id=memory["memory_id"],
-            main_class=memory["main_class"],
-            sub_class=memory.get("sub_class", ""),
-            text=memory["text"],
+            candidate_type=event.get("candidate_type") or "fixture",
         )
 
     db.write_views()

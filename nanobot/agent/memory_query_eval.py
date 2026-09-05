@@ -5,16 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Protocol
 
 from nanobot.agent.context import ContextBuilder
-from nanobot.agent.memory import MemoryStore
-from nanobot.agent.memory_db import MemoryDatabase
-
+from nanobot.agent.memory_db import MemoryDatabase, MemoryRecord, MemorySnapshot
+from nanobot.agent.memory_service import MemoryService
 
 REPORT_VERSION = 1
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -589,8 +588,17 @@ def _core_memories(snapshot: list[dict[str, str]]) -> list[dict[str, str]]:
 
 def _seed_snapshot(workspace: Path, snapshot: list[dict[str, str]]) -> list[dict[str, str]]:
     db = MemoryDatabase(workspace)
+    db.initialize()
     normalized_snapshot = _normalize_memory_snapshot(snapshot)
-    db.replace_canonical_snapshot(normalized_snapshot)
+    records = tuple(
+        MemoryRecord.create(item["main_class"], item["sub_class"], item["text"])
+        for item in normalized_snapshot
+    )
+    db.commit_snapshot(
+        MemorySnapshot(0, records), expected_revision=0, event_id="eval-seed",
+        ts="1970-01-01T00:00:00", session_key="eval", history_text="",
+        candidate_type="fixture",
+    )
     db.write_views()
     return normalized_snapshot
 
@@ -616,8 +624,12 @@ async def _evaluate_seeded_workspace(
     )
     core_memories = _core_memories(final_snapshot)
 
-    builder = ContextBuilder(workspace, memory_mode="v2")
-    answer_messages = builder.build_messages(history=[], current_message=case["question"])
+    service = MemoryService(workspace, answer_provider, model, database=db)
+    builder = ContextBuilder(workspace)
+    memory_context = await service.prepare_context(case["question"], retrieval_budget=top_k)
+    answer_messages = builder.build_messages(
+        history=[], current_message=case["question"], memory_context=memory_context,
+    )
     answer_response = await answer_provider.chat_with_retry(messages=answer_messages, model=model)
     generated_answer = (answer_response.content or "").strip()
 
@@ -776,12 +788,11 @@ async def _run_replay_query_case(
 
     with TemporaryDirectory(prefix=f"nanobot-memory-query-{case['case_id']}-") as tmp:
         workspace = Path(tmp)
-        store = MemoryStore(workspace, mode="v2")
+        service = MemoryService(workspace, consolidate_provider, model)
         consolidate_results: list[bool] = []
         for session in case["replay_sessions"]:
-            consolidate_results.append(
-                await store.consolidate(session["conversation"], consolidate_provider, model)
-            )
+            result = await service.consolidate(session["conversation"], session_key="eval")
+            consolidate_results.append(result.database_committed)
         return await _evaluate_seeded_workspace(
             workspace=workspace,
             case=case,
@@ -988,7 +999,6 @@ async def _run_memory_v2_query_eval_async(
         "cases_source": cases_source,
         "source_dataset": source_dataset,
         "mode": mode,
-        "memory_mode": "v2",
         "model": model,
         "judge_model": judge_model,
         "embedding_model": embedding_model,
@@ -1092,7 +1102,6 @@ def render_memory_v2_query_report_markdown(report: dict[str, Any]) -> str:
         f"- Source Dataset: `{report['source_dataset'] or '(not used)'}`",
         f"- Total Cases: {report['total_cases']}",
         f"- Retrieval Source Mode: `{report['mode']}`",
-        f"- Memory Mode: `{report['memory_mode']}`",
         f"- Model: `{report['model']}`",
         f"- Judge Model: `{report['judge_model']}`",
         f"- Embedding Model: `{report['embedding_model']}`",
