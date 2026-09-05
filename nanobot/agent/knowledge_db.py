@@ -3,58 +3,25 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from nanobot.agent.retrieval import (
+    FTS_TOKENIZER_VERSION,
+    build_fts_query,
+    cosine_similarity,
+    fts_index_text,
+    reciprocal_rank_fuse,
+    vector_json,
+)
 from nanobot.utils.helpers import ensure_dir
 
-SCHEMA_VERSION = 3
-_RRF_K = 60
-
-
-def _build_fts_query(query: str) -> str:
-    """Build a tolerant FTS query from free-form text."""
-    raw_terms = [term.lower() for term in re.findall(r"[A-Za-z0-9_]+", query)]
-    terms: list[str] = []
-    seen: set[str] = set()
-
-    for raw in raw_terms:
-        if len(raw) < 3:
-            continue
-
-        candidates = [raw]
-        for suffix in ("ly", "ing", "ed", "es", "s"):
-            if raw.endswith(suffix) and len(raw) - len(suffix) >= 4:
-                candidates.append(raw[: -len(suffix)])
-
-        for candidate in candidates:
-            token = candidate.strip("_")
-            if len(token) < 3:
-                continue
-            normalized = f"{token}*"
-            if normalized not in seen:
-                seen.add(normalized)
-                terms.append(normalized)
-
-    return " OR ".join(terms)
-
-
-def _cosine_similarity(left: list[float], right: list[float]) -> float:
-    if not left or not right or len(left) != len(right):
-        return 0.0
-    left_norm = sum(value * value for value in left) ** 0.5
-    right_norm = sum(value * value for value in right) ** 0.5
-    if left_norm <= 0.0 or right_norm <= 0.0:
-        return 0.0
-    dot = sum(left_value * right_value for left_value, right_value in zip(left, right))
-    return dot / (left_norm * right_norm)
-
-
-def _vector_json(vector: list[float]) -> str:
-    return json.dumps([float(value) for value in vector], ensure_ascii=False, separators=(",", ":"))
+SCHEMA_VERSION = 4
+_build_fts_query = build_fts_query
+_cosine_similarity = cosine_similarity
+_vector_json = vector_json
 
 
 def _default_vec_loader(conn: sqlite3.Connection) -> None:
@@ -121,7 +88,13 @@ class WebKnowledgeDatabase:
             self._vec_loader(conn)
         return conn
 
-    def initialize(self, vector_dim: int) -> None:
+    def initialize(
+        self,
+        vector_dim: int,
+        *,
+        embedding_provider: str = "dashscope",
+        embedding_model: str = "text-embedding-v4",
+    ) -> None:
         if vector_dim <= 0:
             raise ValueError("vector_dim must be positive")
         if self._vector_dim is not None and self._vector_dim != vector_dim:
@@ -148,10 +121,25 @@ class WebKnowledgeDatabase:
             existing_dim_row = conn.execute(
                 "select value from metadata where key = 'vector_dim'"
             ).fetchone()
+            existing_tokenizer_row = conn.execute(
+                "select value from metadata where key = 'fts_tokenizer_version'"
+            ).fetchone()
 
             existing_version = int(existing_version_row["value"]) if existing_version_row else None
             existing_backend = str(existing_backend_row["value"]) if existing_backend_row else None
             existing_dim = int(existing_dim_row["value"]) if existing_dim_row else None
+            existing_tokenizer = (
+                str(existing_tokenizer_row["value"]) if existing_tokenizer_row else None
+            )
+            for key, expected in {
+                "embedding_provider": embedding_provider,
+                "embedding_model": embedding_model,
+            }.items():
+                row = conn.execute("select value from metadata where key=?", (key,)).fetchone()
+                if row is not None and str(row["value"]) != expected:
+                    raise RuntimeError(
+                        f"External web knowledge index metadata mismatch for {key}; rebuild the knowledge indexes."
+                    )
 
             if existing_version is not None and existing_version != SCHEMA_VERSION:
                 raise RuntimeError(
@@ -167,6 +155,10 @@ class WebKnowledgeDatabase:
                 raise RuntimeError(
                     f"External web knowledge already initialized with vector_dim={existing_dim}, "
                     f"got {vector_dim}."
+                )
+            if existing_tokenizer is not None and existing_tokenizer != FTS_TOKENIZER_VERSION:
+                raise RuntimeError(
+                    "External web knowledge FTS tokenizer changed; rebuild the knowledge indexes."
                 )
 
             conn.executescript(
@@ -203,17 +195,8 @@ class WebKnowledgeDatabase:
                     unique(parent_id, child_index)
                 );
 
-                create virtual table if not exists page_parent_fts using fts5(
-                    text,
-                    content='page_parents',
-                    content_rowid='parent_id'
-                );
-
-                create virtual table if not exists parent_child_fts using fts5(
-                    text,
-                    content='parent_children',
-                    content_rowid='child_id'
-                );
+                create virtual table if not exists page_parent_fts using fts5(tokens);
+                create virtual table if not exists parent_child_fts using fts5(tokens);
                 """
             )
 
@@ -253,6 +236,18 @@ class WebKnowledgeDatabase:
                 """,
                 (self.vec_backend,),
             )
+            conn.execute(
+                "insert into metadata(key, value) values('fts_tokenizer_version', ?) "
+                "on conflict(key) do update set value=excluded.value",
+                (FTS_TOKENIZER_VERSION,),
+            )
+            for key, value in {
+                "embedding_provider": embedding_provider,
+                "embedding_model": embedding_model,
+            }.items():
+                conn.execute(
+                    "insert or ignore into metadata(key, value) values(?, ?)", (key, value)
+                )
 
     def has_pages(self) -> bool:
         if not self.db_path.exists():
@@ -520,8 +515,12 @@ class WebKnowledgeDatabase:
         if not self.db_path.exists():
             return
         with self.connect() as conn:
-            conn.execute("insert into page_parent_fts(page_parent_fts) values ('rebuild')")
-            conn.execute("insert into parent_child_fts(parent_child_fts) values ('rebuild')")
+            conn.execute("delete from page_parent_fts")
+            conn.execute("delete from parent_child_fts")
+            for row in conn.execute("select parent_id, text from page_parents"):
+                self._insert_parent_fts(conn, int(row["parent_id"]), str(row["text"]))
+            for row in conn.execute("select child_id, text from parent_children"):
+                self._insert_child_fts(conn, int(row["child_id"]), str(row["text"]))
 
     def search_parent_fts(self, query: str, limit: int) -> list[dict[str, Any]]:
         if not self.db_path.exists():
@@ -667,24 +666,7 @@ class WebKnowledgeDatabase:
         key_field: str,
         limit: int,
     ) -> list[dict[str, Any]]:
-        fused: dict[Any, dict[str, Any]] = {}
-        for source_name, rows in result_sets.items():
-            for rank, row in enumerate(rows, start=1):
-                key = row[key_field]
-                current = fused.setdefault(key, {**row, "sources": [], "rrf_score": 0.0})
-                current["rrf_score"] = float(current.get("rrf_score", 0.0)) + (1.0 / (_RRF_K + rank))
-                current[f"{source_name}_rank"] = rank
-                current.setdefault("sources", [])
-                if source_name not in current["sources"]:
-                    current["sources"].append(source_name)
-                for item_key, item_value in row.items():
-                    current.setdefault(item_key, item_value)
-
-        ranked = sorted(
-            fused.values(),
-            key=lambda item: (-float(item.get("rrf_score", 0.0)), int(item[key_field])),
-        )
-        return ranked[:limit]
+        return reciprocal_rank_fuse(result_sets, key_field=key_field, limit=limit)
 
     def _delete_page_children(self, conn: sqlite3.Connection, page_id: int) -> None:
         child_rows = conn.execute(
@@ -707,29 +689,29 @@ class WebKnowledgeDatabase:
     @staticmethod
     def _insert_parent_fts(conn: sqlite3.Connection, parent_id: int, parent_text: str) -> None:
         conn.execute(
-            "insert into page_parent_fts(rowid, text) values (?, ?)",
-            (parent_id, parent_text),
+            "insert into page_parent_fts(rowid, tokens) values (?, ?)",
+            (parent_id, fts_index_text(parent_text)),
         )
 
     @staticmethod
     def _delete_parent_fts(conn: sqlite3.Connection, parent_id: int, parent_text: str) -> None:
         conn.execute(
-            "insert into page_parent_fts(page_parent_fts, rowid, text) values ('delete', ?, ?)",
-            (parent_id, parent_text),
+            "delete from page_parent_fts where rowid = ?",
+            (parent_id,),
         )
 
     @staticmethod
     def _insert_child_fts(conn: sqlite3.Connection, child_id: int, child_text: str) -> None:
         conn.execute(
-            "insert into parent_child_fts(rowid, text) values (?, ?)",
-            (child_id, child_text),
+            "insert into parent_child_fts(rowid, tokens) values (?, ?)",
+            (child_id, fts_index_text(child_text)),
         )
 
     @staticmethod
     def _delete_child_fts(conn: sqlite3.Connection, child_id: int, child_text: str) -> None:
         conn.execute(
-            "insert into parent_child_fts(parent_child_fts, rowid, text) values ('delete', ?, ?)",
-            (child_id, child_text),
+            "delete from parent_child_fts where rowid = ?",
+            (child_id,),
         )
 
     def _upsert_vector_row(

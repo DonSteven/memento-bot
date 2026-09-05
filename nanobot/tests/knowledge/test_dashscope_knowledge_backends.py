@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 import pytest
 
-from nanobot.agent.knowledge import _DashScopeEmbeddingBackend, _DashScopeRerankerBackend
+from nanobot.agent.retrieval import DashScopeEmbeddingBackend, DashScopeRerankerBackend
 
 
 class _FakeClient:
@@ -50,13 +50,15 @@ class _FakeClient:
 
 
 @pytest.mark.asyncio
-async def test_dashscope_embedding_batches_and_distinguishes_documents_from_query(monkeypatch) -> None:
+async def test_dashscope_embedding_batches_and_distinguishes_documents_from_query(
+    monkeypatch,
+) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        "nanobot.agent.knowledge.httpx.AsyncClient",
+        "nanobot.agent.retrieval.httpx.AsyncClient",
         lambda *, timeout: _FakeClient(calls, timeout),
     )
-    backend = _DashScopeEmbeddingBackend(
+    backend = DashScopeEmbeddingBackend(
         api_key="sk-test",
         api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
         model="text-embedding-v4",
@@ -67,8 +69,7 @@ async def test_dashscope_embedding_batches_and_distinguishes_documents_from_quer
     query_vector = await backend.embed_query("query")
 
     assert backend.endpoint == (
-        "https://dashscope.aliyuncs.com/api/v1/services/embeddings/"
-        "text-embedding/text-embedding"
+        "https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding"
     )
     assert len(vectors) == 11
     assert vectors[0] == pytest.approx([0.6, 0.8])
@@ -83,13 +84,15 @@ async def test_dashscope_embedding_batches_and_distinguishes_documents_from_quer
 
 
 @pytest.mark.asyncio
-async def test_dashscope_reranker_uses_dedicated_endpoint_and_restores_input_order(monkeypatch) -> None:
+async def test_dashscope_reranker_uses_dedicated_endpoint_and_restores_input_order(
+    monkeypatch,
+) -> None:
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        "nanobot.agent.knowledge.httpx.AsyncClient",
+        "nanobot.agent.retrieval.httpx.AsyncClient",
         lambda *, timeout: _FakeClient(calls, timeout),
     )
-    backend = _DashScopeRerankerBackend(
+    backend = DashScopeRerankerBackend(
         api_key="sk-test",
         api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
         model="qwen3-rerank",
