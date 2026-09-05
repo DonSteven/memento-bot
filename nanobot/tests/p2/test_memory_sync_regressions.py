@@ -6,36 +6,46 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from nanobot.agent import memory_sync
-from nanobot.agent.loop import AgentLoop
 from nanobot.agent.memory_db import MemoryRecord, MemorySnapshot
-from nanobot.agent.memory_service import MemoryService
 from nanobot.agent.memory_sync import parse_memory_markdown, render_memory_markdown
 from nanobot.api.server import handle_chat_completions
 from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMResponse, ToolCallRequest
+from nanobot.tests.memory_test_utils import TestAgentLoop as AgentLoop
+from nanobot.tests.memory_test_utils import TestMemoryService as MemoryService
 
 
 def _response(sub_class="style", text="Use Python"):
-    return LLMResponse(content=None, tool_calls=[ToolCallRequest(
-        id="save", name="save_memory_structured", arguments={
-            "history_entry": "Saved development preferences",
-            "canonical_memories": [
-                {"main_class": "preferences", "sub_class": sub_class, "text": text},
-            ],
-        },
-    )])
+    return LLMResponse(
+        content=None,
+        tool_calls=[
+            ToolCallRequest(
+                id="save",
+                name="save_memory_structured",
+                arguments={
+                    "history_entry": "Saved development preferences",
+                    "canonical_memories": [
+                        {"main_class": "preferences", "sub_class": sub_class, "text": text},
+                    ],
+                },
+            )
+        ],
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("sub_class", "text"), [
-    ("style", "Use Python.\nPrefer pytest."),
-    ("style", "Use Python.\n- testing: Prefer pytest"),
-    ("project: alpha", "Uses Python"),
-    ("project\nalpha", "Uses Python"),
-    ("style", "Use Python.\rPrefer pytest."),
-    ("style", "Use Python.\u2028Prefer pytest."),
-])
+@pytest.mark.parametrize(
+    ("sub_class", "text"),
+    [
+        ("style", "Use Python.\nPrefer pytest."),
+        ("style", "Use Python.\n- testing: Prefer pytest"),
+        ("project: alpha", "Uses Python"),
+        ("project\nalpha", "Uses Python"),
+        ("style", "Use Python.\rPrefer pytest."),
+        ("style", "Use Python.\u2028Prefer pytest."),
+    ],
+)
 async def test_unrepresentable_extraction_preserves_database_and_views(tmp_path, sub_class, text):
     provider = AsyncMock()
     provider.chat_with_retry.return_value = _response()
@@ -71,15 +81,21 @@ def test_direct_records_cannot_bypass_markdown_validation(tmp_path):
         render_memory_markdown((invalid,))
     with pytest.raises(ValueError, match="delimiter"):
         service.database.commit_snapshot(
-            MemorySnapshot(0, (invalid,)), expected_revision=0, event_id="invalid",
-            ts="2026-09-05", session_key="test", history_text="invalid",
+            MemorySnapshot(0, (invalid,)),
+            expected_revision=0,
+            event_id="invalid",
+            ts="2026-09-05",
+            session_key="test",
+            history_text="invalid",
         )
     assert service.database.read_snapshot() == MemorySnapshot(0)
     assert service.database.list_raw_events() == []
 
 
 def test_single_line_punctuation_and_literal_escapes_round_trip():
-    record = MemoryRecord.create("preferences", "project:alpha", r"Use URL: https://example.com; \n is literal")
+    record = MemoryRecord.create(
+        "preferences", "project:alpha", r"Use URL: https://example.com; \n is literal"
+    )
     assert parse_memory_markdown(render_memory_markdown((record,))) == (record,)
 
 
@@ -99,9 +115,14 @@ async def test_sync_errors_reach_users_without_model_calls(tmp_path, entrypoint,
     else:
         records = (MemoryRecord.create("preferences", "style", "Database target"),)
         db.commit_snapshot(
-            MemorySnapshot(0, records), expected_revision=0, event_id="pending",
-            ts="2026-09-05", session_key="test", history_text="pending",
-            publish_expected_text=old_text, publish_target_text=render_memory_markdown(records),
+            MemorySnapshot(0, records),
+            expected_revision=0,
+            event_id="pending",
+            ts="2026-09-05",
+            session_key="test",
+            history_text="pending",
+            publish_expected_text=old_text,
+            publish_target_text=render_memory_markdown(records),
             stage_publish=True,
         )
         human_text = old_text + "\n"
@@ -111,9 +132,14 @@ async def test_sync_errors_reach_users_without_model_calls(tmp_path, entrypoint,
     state = agent.memory_service.synchronizer.read_state()
 
     if entrypoint == "gateway":
-        await agent._dispatch(InboundMessage(
-            channel="cli", sender_id="test", chat_id="test", content="hello",
-        ))
+        await agent._dispatch(
+            InboundMessage(
+                channel="cli",
+                sender_id="test",
+                chat_id="test",
+                content="hello",
+            )
+        )
         response = bus.outbound.get_nowait()
         assert expected in response.content
         assert bus.outbound.empty()
@@ -136,13 +162,17 @@ async def test_sync_errors_reach_users_without_model_calls(tmp_path, entrypoint,
 @pytest.mark.asyncio
 async def test_unchanged_queries_skip_history_io_and_rebuild_a_missing_view(tmp_path, monkeypatch):
     service = MemoryService(tmp_path, AsyncMock(), "test")
-    await service.archive_raw([{"role": "user", "content": "Saved conversation"}], session_key="test")
+    await service.archive_raw(
+        [{"role": "user", "content": "Saved conversation"}], session_key="test"
+    )
     db = service.database
     original = db.history_file.read_bytes()
     stat = db.history_file.stat()
     snapshot = db.read_snapshot()
     with monkeypatch.context() as patch:
-        patch.setattr(db, "render_history_view", MagicMock(side_effect=AssertionError("history read")))
+        patch.setattr(
+            db, "render_history_view", MagicMock(side_effect=AssertionError("history read"))
+        )
         for _ in range(3):
             await service.prepare_context("hello")
     assert db.history_file.read_bytes() == original
@@ -173,7 +203,8 @@ async def test_history_export_failure_remains_pending_and_recovers(tmp_path, mon
     with monkeypatch.context() as patch:
         patch.setattr(memory_sync, "_atomic_write", fail_history)
         result = await service.consolidate(
-            [{"role": "user", "content": "Remember Python"}], session_key="test",
+            [{"role": "user", "content": "Remember Python"}],
+            session_key="test",
         )
     assert result.database_committed and not result.view_exported
     assert result.error == "history disk full"

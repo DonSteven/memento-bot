@@ -36,7 +36,7 @@ from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, KnowledgeConfig, WebSearchConfig
+    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, KnowledgeConfig, MemoryConfig, WebSearchConfig
     from nanobot.cron.service import CronService
 
 
@@ -179,8 +179,16 @@ class AgentLoop:
         hooks: list[AgentHook] | None = None,
         knowledge_config: KnowledgeConfig | None = None,
         knowledge_api_key: str | None = None,
+        memory_config: MemoryConfig | None = None,
+        memory_api_key: str | None = None,
+        memory_service: MemoryService | None = None,
     ):
-        from nanobot.config.schema import ExecToolConfig, KnowledgeConfig, WebSearchConfig
+        from nanobot.config.schema import (
+            ExecToolConfig,
+            KnowledgeConfig,
+            MemoryConfig,
+            WebSearchConfig,
+        )
 
         self.bus = bus
         self.channels_config = channels_config
@@ -195,15 +203,20 @@ class AgentLoop:
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
         self.knowledge_config = knowledge_config or KnowledgeConfig()
+        self.memory_config = memory_config or MemoryConfig()
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
         self._system_hooks: list[AgentHook] = []
         self._extra_hooks: list[AgentHook] = hooks or []
 
         self.context = ContextBuilder(
-            workspace, timezone=timezone, knowledge_enabled=self.knowledge_config.enabled,
+            workspace,
+            timezone=timezone,
+            knowledge_enabled=self.knowledge_config.enabled,
         )
-        self.memory_service = MemoryService(workspace, provider, self.model)
+        self.memory_service = memory_service or MemoryService(
+            workspace, provider, self.model, config=self.memory_config, api_key=memory_api_key
+        )
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.runner = AgentRunner(provider)

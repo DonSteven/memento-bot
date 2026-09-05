@@ -552,6 +552,8 @@ def serve(
         timezone=runtime_config.agents.defaults.timezone,
         knowledge_config=runtime_config.knowledge,
         knowledge_api_key=runtime_config.providers.dashscope.api_key,
+        memory_config=runtime_config.memory,
+        memory_api_key=runtime_config.providers.dashscope.api_key,
     )
 
     model_name = runtime_config.agents.defaults.model
@@ -642,6 +644,8 @@ def gateway(
         timezone=config.agents.defaults.timezone,
         knowledge_config=config.knowledge,
         knowledge_api_key=config.providers.dashscope.api_key,
+        memory_config=config.memory,
+        memory_api_key=config.providers.dashscope.api_key,
     )
 
     # Set cron callback (needs agent)
@@ -850,6 +854,8 @@ def agent(
         timezone=config.agents.defaults.timezone,
         knowledge_config=config.knowledge,
         knowledge_api_key=config.providers.dashscope.api_key,
+        memory_config=config.memory,
+        memory_api_key=config.providers.dashscope.api_key,
     )
 
     # Shared reference for progress callbacks
@@ -1464,15 +1470,15 @@ def memory_v2_query_eval(
         "--cases-path",
         help="JSON file or directory containing query cases (datasets are not bundled)",
     ),
-    top_k: int = typer.Option(
-        5,
+    top_k: int | None = typer.Option(
+        None,
         "--top-k",
-        help="Top-k FTS retrieval limit for each query",
+        help="Override memory.dynamicTopK for hybrid retrieval",
     ),
     embedding_model: str = typer.Option(
         "sentence-transformers/all-MiniLM-L6-v2",
         "--embedding-model",
-        help="SentenceTransformer model used for support-memory matching",
+        help="SentenceTransformer model used for retrieval and support-memory matching",
     ),
     output: str = typer.Option("markdown", "--output", "-o", help="Output format: markdown or json"),
     save_dir: str | None = typer.Option(
@@ -1521,8 +1527,8 @@ def memory_v2_query_eval(
     if output not in {"markdown", "json"}:
         console.print("[red]Error:[/red] --output must be 'markdown' or 'json'")
         raise typer.Exit(1)
-    if top_k <= 0:
-        console.print("[red]Error:[/red] --top-k must be greater than 0")
+    if top_k is not None and not 1 <= top_k <= 100:
+        console.print("[red]Error:[/red] --top-k must be greater than 0 and at most 100")
         raise typer.Exit(1)
 
     if not cases_path:
@@ -1543,6 +1549,7 @@ def memory_v2_query_eval(
         "cases_path": Path(cases_path).expanduser() if cases_path else None,
         "level": normalized_level.lower() if normalized_level == "ALL" else normalized_level,
         "question_type": normalized_question_type,
+        "memory_config": runtime_config.memory,
         "top_k": top_k,
         "embedding_model": embedding_model,
     }

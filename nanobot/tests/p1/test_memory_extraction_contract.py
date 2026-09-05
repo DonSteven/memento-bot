@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from nanobot.agent.memory_db import MemorySnapshot
-from nanobot.agent.memory_service import MemoryService
 from nanobot.providers.base import LLMResponse, ToolCallRequest
+from nanobot.tests.memory_test_utils import TestMemoryService as MemoryService
 
 MESSAGES = [{"role": "user", "content": "Remember Nanobot"}]
 FACT = {"main_class": "projects", "sub_class": "active", "text": "Nanobot project"}
@@ -13,7 +13,10 @@ VALID = {"history_entry": "saved", "canonical_memories": [FACT]}
 
 
 def _response(arguments):
-    return LLMResponse(content=None, tool_calls=[ToolCallRequest(id="save", name="save_memory_structured", arguments=arguments)])
+    return LLMResponse(
+        content=None,
+        tool_calls=[ToolCallRequest(id="save", name="save_memory_structured", arguments=arguments)],
+    )
 
 
 def _service(workspace, arguments):
@@ -37,10 +40,13 @@ async def test_supported_tool_argument_formats_commit_snapshot(tmp_path, argumen
 
 @pytest.mark.asyncio
 async def test_structured_text_values_are_serialized(tmp_path):
-    service = _service(tmp_path, {
-        "history_entry": {"summary": "saved"},
-        "canonical_memories": [{**FACT, "text": {"name": "Nanobot"}}],
-    })
+    service = _service(
+        tmp_path,
+        {
+            "history_entry": {"summary": "saved"},
+            "canonical_memories": [{**FACT, "text": {"name": "Nanobot"}}],
+        },
+    )
     result = await service.consolidate(MESSAGES, session_key="test")
     assert result.database_committed
     assert json.loads(service.database.history_file.read_text()) == {"summary": "saved"}
@@ -48,21 +54,37 @@ async def test_structured_text_values_are_serialized(tmp_path):
 
 
 INVALID = [
-    None, "{bad json", [], ["invalid"], {},
-    {"canonical_memories": []}, {"history_entry": "saved"},
-    {**VALID, "history_entry": None}, {**VALID, "history_entry": "   "},
-    {**VALID, "canonical_memories": None}, {**VALID, "canonical_memories": {}},
-    *[{**VALID, "canonical_memories": [FACT, invalid]} for invalid in (
-        "invalid", {**FACT, "main_class": "unknown"}, {**FACT, "sub_class": ""},
-        {**FACT, "sub_class": None}, {**FACT, "text": " "}, {**FACT, "text": None},
-        {"main_class": "projects", "text": "missing subclass"},
-    )],
+    None,
+    "{bad json",
+    [],
+    ["invalid"],
+    {},
+    {"canonical_memories": []},
+    {"history_entry": "saved"},
+    {**VALID, "history_entry": None},
+    {**VALID, "history_entry": "   "},
+    {**VALID, "canonical_memories": None},
+    {**VALID, "canonical_memories": {}},
+    *[
+        {**VALID, "canonical_memories": [FACT, invalid]}
+        for invalid in (
+            "invalid",
+            {**FACT, "main_class": "unknown"},
+            {**FACT, "sub_class": ""},
+            {**FACT, "sub_class": None},
+            {**FACT, "text": " "},
+            {**FACT, "text": None},
+            {"main_class": "projects", "text": "missing subclass"},
+        )
+    ],
 ]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("arguments", INVALID)
-async def test_invalid_extraction_does_not_change_snapshot_event_index_or_views(tmp_path, arguments):
+async def test_invalid_extraction_does_not_change_snapshot_event_index_or_views(
+    tmp_path, arguments
+):
     service = _service(tmp_path, VALID)
     await service.consolidate(MESSAGES, session_key="test")
     db = service.database
@@ -84,16 +106,21 @@ async def test_snapshot_replacement_and_empty_snapshot_remove_old_fts_hits(tmp_p
     service = _service(tmp_path, VALID)
     await service.consolidate(MESSAGES, session_key="test")
     provider = service.pipeline.provider
-    provider.chat_with_retry.return_value = _response({
-        "history_entry": "replaced", "canonical_memories": [{**FACT, "text": "Orion project"}],
-    })
+    provider.chat_with_retry.return_value = _response(
+        {
+            "history_entry": "replaced",
+            "canonical_memories": [{**FACT, "text": "Orion project"}],
+        }
+    )
     result = await service.consolidate(MESSAGES, session_key="test")
     assert result.database_committed
     prompt = provider.chat_with_retry.call_args.kwargs["messages"][1]["content"]
     assert "Nanobot project" in prompt
     assert service.database.query_dynamic_memories("Nanobot") == ()
     assert len(service.database.query_dynamic_memories("Orion")) == 1
-    provider.chat_with_retry.return_value = _response({"history_entry": "cleared", "canonical_memories": []})
+    provider.chat_with_retry.return_value = _response(
+        {"history_entry": "cleared", "canonical_memories": []}
+    )
     result = await service.consolidate(MESSAGES, session_key="test")
     assert result.database_committed
     assert service.database.read_snapshot() == MemorySnapshot(3)

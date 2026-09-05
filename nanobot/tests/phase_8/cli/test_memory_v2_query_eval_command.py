@@ -16,13 +16,16 @@ from typer.testing import CliRunner
 import nanobot.agent.memory_query_eval as query_eval
 from nanobot.cli import commands
 from nanobot.cli.commands import app
-
+from nanobot.config.schema import MemoryConfig
 
 runner = CliRunner()
 
 
 def _fake_runtime_config() -> SimpleNamespace:
-    return SimpleNamespace(agents=SimpleNamespace(defaults=SimpleNamespace(model="test-model")))
+    return SimpleNamespace(
+        agents=SimpleNamespace(defaults=SimpleNamespace(model="test-model")),
+        memory=MemoryConfig(vector_similarity_threshold=0.7, dynamic_top_k=8),
+    )
 
 
 def _fake_report() -> dict:
@@ -38,6 +41,7 @@ def _fake_report() -> dict:
         "embedding_model": "fake-model",
         "top_k": 5,
         "threshold": 0.82,
+        "retrieval_config": MemoryConfig().model_dump(exclude={"embedding"}),
         "total_cases": 1,
         "summary": {
             "overall": {
@@ -103,6 +107,9 @@ def test_memory_v2_query_eval_command_defaults_to_snapshot_mode(monkeypatch) -> 
     assert captured["judge_provider"] is not None
     assert captured["judge_model"] == "test-model"
     assert captured["cases_path"] == Path("synthetic-cases.json")
+    assert captured["memory_config"].vector_similarity_threshold == 0.7
+    assert captured["memory_config"].dynamic_top_k == 8
+    assert captured["top_k"] is None
 
 
 def test_memory_v2_query_eval_command_passes_provider_in_replay_mode(monkeypatch) -> None:

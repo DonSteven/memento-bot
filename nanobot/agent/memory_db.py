@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
-import re
+import json
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha1
 from pathlib import Path
 from typing import Any, Iterable
 
+from nanobot.agent.retrieval import (
+    FTS_TOKENIZER_VERSION,
+    build_fts_query,
+    cosine_similarity,
+    fts_index_text,
+    load_sqlite_vec,
+    reciprocal_rank_fuse,
+    vector_json,
+)
 from nanobot.utils.helpers import ensure_dir
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 CORE_MEMORY_CLASSES = ("personal_profile", "preferences", "constraints")
 DYNAMIC_MEMORY_CLASSES = ("projects", "daily_life", "plans_commitments")
 MEMORY_CLASSES = CORE_MEMORY_CLASSES + DYNAMIC_MEMORY_CLASSES
@@ -43,6 +53,10 @@ class MemoryContext:
     core_items: tuple[MemoryRecord, ...] = ()
     retrieved_items: tuple[MemoryRecord, ...] = ()
 
+    def render_block(self) -> str:
+        memory = self.render()
+        return f"# Memory\n\n{memory}" if memory else ""
+
     def render(self) -> str:
         lines: list[str] = []
         if self.core_items:
@@ -52,6 +66,16 @@ class MemoryContext:
                 lines.append("")
             lines.extend(["## Retrieved Memory", *_format_memory_snippets(self.retrieved_items)])
         return "\n".join(lines)
+
+
+@dataclass(frozen=True, slots=True)
+class DynamicMemoryHit:
+    record: MemoryRecord
+    sources: tuple[str, ...]
+    rrf_score: float
+    fts_rank: int | None = None
+    vector_rank: int | None = None
+    vector_similarity: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,50 +158,62 @@ def render_history_markdown(events: list[dict[str, Any]]) -> str:
     return "\n\n".join(entries) + ("\n\n" if entries else "")
 
 
-def _build_fts_query(query: str) -> str:
-    raw_terms = [term.lower() for term in re.findall(r"[A-Za-z0-9_]+", query)]
-    terms: list[str] = []
-    seen: set[str] = set()
-    for raw in raw_terms:
-        if len(raw) < 3:
-            continue
-        candidates = [raw]
-        for suffix in ("ly", "ing", "ed", "es", "s"):
-            if raw.endswith(suffix) and len(raw) - len(suffix) >= 4:
-                candidates.append(raw[: -len(suffix)])
-        for candidate in candidates:
-            token = candidate.strip("_")
-            normalized = f"{token}*"
-            if len(token) >= 3 and normalized not in seen:
-                seen.add(normalized)
-                terms.append(normalized)
-    return " OR ".join(terms)
-
-
 class MemoryDatabase:
     """SQLite store. Initialization is explicit; all query methods are read-only."""
 
     def __init__(
-        self, workspace: Path, *, storage_dir: Path | None = None, view_dir: Path | None = None
+        self,
+        workspace: Path,
+        *,
+        storage_dir: Path | None = None,
+        view_dir: Path | None = None,
+        vec_backend: str = "sqlite-vec",
+        vec_loader: Callable[[sqlite3.Connection], None] | None = None,
     ) -> None:
+        if vec_backend not in {"sqlite-vec", "array"}:
+            raise ValueError(f"Unsupported vector backend: {vec_backend}")
         self.memory_dir = ensure_dir(workspace / "memory")
         self.storage_dir = ensure_dir(storage_dir or self.memory_dir)
         self.view_dir = ensure_dir(view_dir or self.memory_dir)
         self.db_path = self.storage_dir / "memory.db"
         self.memory_file = self.view_dir / "MEMORY.md"
         self.history_file = self.view_dir / "HISTORY.md"
+        self.vec_backend = vec_backend
+        self._vec_loader = vec_loader
+        self._vector_dim: int | None = None
 
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        if self.vec_backend == "sqlite-vec":
+            if self._vec_loader is not None:
+                self._vec_loader(conn)
+            else:
+                load_sqlite_vec(conn, feature="Semantic memory")
         return conn
 
-    def initialize(self) -> None:
+    def initialize(
+        self,
+        vector_dim: int | None = None,
+        *,
+        embedding_provider: str | None = None,
+        embedding_model: str | None = None,
+    ) -> None:
         """Create storage once without rebuilding derived indexes on later calls."""
         with self.connect() as conn:
+            conn.execute(
+                "create table if not exists metadata (key text primary key, value text not null)"
+            )
+            version_row = conn.execute(
+                "select value from metadata where key='schema_version'"
+            ).fetchone()
+            if version_row is not None and int(version_row["value"]) != SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"Memory database schema_version={version_row['value']} is incompatible with "
+                    f"schema_version={SCHEMA_VERSION}. Preserve it for the planned data conversion."
+                )
             conn.executescript("""
-                create table if not exists metadata (key text primary key, value text not null);
                 create table if not exists raw_events (
                     event_id text primary key, ts text not null, session_key text not null,
                     history_text text not null, plain_text text not null default '',
@@ -189,7 +225,11 @@ class MemoryDatabase:
                     sub_class text not null default '', text text not null
                 );
                 create virtual table if not exists canonical_fts using fts5(
-                    memory_id UNINDEXED, main_class UNINDEXED, sub_class, text
+                    memory_id UNINDEXED, tokens
+                );
+                create table if not exists memory_vector_map (
+                    rowid integer primary key autoincrement,
+                    memory_id text not null unique references canonical_memories(memory_id) on delete cascade
                 );
                 create table if not exists memory_sync_state (
                     singleton integer primary key check(singleton = 1),
@@ -201,12 +241,54 @@ class MemoryDatabase:
                 );
             """)
             self._validate_runtime_schema(conn)
+            stored = {
+                key: (
+                    str(row["value"])
+                    if (
+                        row := conn.execute(
+                            "select value from metadata where key=?", (key,)
+                        ).fetchone()
+                    )
+                    is not None
+                    else None
+                )
+                for key in ("vector_dim", "embedding_provider", "embedding_model")
+            }
+            vector_dim = vector_dim or (int(stored["vector_dim"]) if stored["vector_dim"] else 1024)
+            embedding_provider = embedding_provider or stored["embedding_provider"] or "dashscope"
+            embedding_model = embedding_model or stored["embedding_model"] or "text-embedding-v4"
+            expected_metadata = {
+                "vector_dim": str(vector_dim),
+                "embedding_provider": embedding_provider,
+                "embedding_model": embedding_model,
+                "fts_tokenizer_version": FTS_TOKENIZER_VERSION,
+                "vec_backend": self.vec_backend,
+            }
+            for key, expected_value in expected_metadata.items():
+                row = conn.execute("select value from metadata where key=?", (key,)).fetchone()
+                if row is not None and str(row["value"]) != expected_value:
+                    raise RuntimeError(
+                        f"Memory index metadata mismatch for {key}: stored {row['value']!r}, configured {expected_value!r}. Rebuild the memory indexes."
+                    )
+            if self.vec_backend == "sqlite-vec":
+                conn.execute(
+                    f"create virtual table if not exists memory_vec using vec0(embedding float[{vector_dim}])"
+                )
+            else:
+                conn.execute(
+                    "create table if not exists memory_vec(rowid integer primary key, embedding_json text not null)"
+                )
             conn.execute(
                 "insert into metadata(key, value) values('schema_version', ?) on conflict(key) do update set value=excluded.value",
                 (str(SCHEMA_VERSION),),
             )
             conn.execute("insert or ignore into metadata(key, value) values('revision', '0')")
+            for key, value in expected_metadata.items():
+                conn.execute(
+                    "insert or ignore into metadata(key, value) values(?, ?)", (key, value)
+                )
             conn.execute("insert or ignore into memory_sync_state(singleton) values(1)")
+            self._vector_dim = vector_dim
 
     @staticmethod
     def _validate_runtime_schema(conn: sqlite3.Connection) -> None:
@@ -224,6 +306,7 @@ class MemoryDatabase:
                 "source_end_idx",
             },
             "canonical_memories": {"memory_id", "main_class", "sub_class", "text"},
+            "memory_vector_map": {"rowid", "memory_id"},
             "memory_sync_state": {
                 "singleton",
                 "published_revision",
@@ -295,20 +378,133 @@ class MemoryDatabase:
             )
         )
 
-    def query_dynamic_memories(self, query: str, limit: int = 5) -> tuple[MemoryRecord, ...]:
-        fts_query = _build_fts_query(query.strip())
+    def search_dynamic_fts(self, query: str, limit: int) -> list[dict[str, Any]]:
+        fts_query = build_fts_query(query.strip())
         if not fts_query or limit <= 0:
-            return ()
+            return []
         placeholders = ",".join("?" for _ in DYNAMIC_MEMORY_CLASSES)
         with self.connect() as conn:
             rows = conn.execute(
-                f"select c.memory_id, c.main_class, c.sub_class, c.text from canonical_fts f join canonical_memories c on c.memory_id=f.memory_id where canonical_fts match ? and c.main_class in ({placeholders}) order by bm25(canonical_fts), c.main_class, c.sub_class, c.memory_id limit ?",
+                f"select c.memory_id, c.main_class, c.sub_class, c.text, bm25(canonical_fts) as rank_score from canonical_fts f join canonical_memories c on c.memory_id=f.memory_id where canonical_fts match ? and c.main_class in ({placeholders}) order by bm25(canonical_fts), c.memory_id limit ?",
                 (fts_query, *DYNAMIC_MEMORY_CLASSES, limit),
             ).fetchall()
-        return tuple(MemoryRecord(**dict(row)) for row in rows)
+        return [dict(row) for row in rows]
+
+    def search_dynamic_vector(self, query_vector: list[float], limit: int) -> list[dict[str, Any]]:
+        if limit <= 0:
+            return []
+        if self._vector_dim is None or len(query_vector) != self._vector_dim:
+            raise RuntimeError(
+                f"Memory query vector dimension mismatch: expected {self._vector_dim}, got {len(query_vector)}"
+            )
+        if self.vec_backend == "sqlite-vec":
+            with self.connect() as conn:
+                rows = conn.execute(
+                    """with hits as (select rowid, distance from memory_vec where embedding match ? and k = ?)
+                    select c.memory_id, c.main_class, c.sub_class, c.text, hits.distance as rank_score,
+                           1.0 - (hits.distance * hits.distance / 2.0) as vector_similarity
+                    from hits join memory_vector_map m on m.rowid=hits.rowid
+                    join canonical_memories c on c.memory_id=m.memory_id
+                    order by hits.distance, c.memory_id limit ?""",
+                    (vector_json(query_vector), limit, limit),
+                ).fetchall()
+            return [dict(row) for row in rows]
+        with self.connect() as conn:
+            rows = conn.execute(
+                "select c.memory_id, c.main_class, c.sub_class, c.text, v.embedding_json "
+                "from memory_vec v join memory_vector_map m on m.rowid=v.rowid "
+                "join canonical_memories c on c.memory_id=m.memory_id"
+            ).fetchall()
+        hits = []
+        for row in rows:
+            similarity = cosine_similarity(
+                query_vector, [float(v) for v in json.loads(row["embedding_json"])]
+            )
+            item = dict(row)
+            item.pop("embedding_json")
+            item.update(rank_score=1.0 - similarity, vector_similarity=similarity)
+            hits.append(item)
+        hits.sort(key=lambda item: (item["rank_score"], item["memory_id"]))
+        return hits[:limit]
+
+    @staticmethod
+    def fuse_dynamic(
+        result_sets: dict[str, list[dict[str, Any]]], limit: int
+    ) -> list[dict[str, Any]]:
+        return reciprocal_rank_fuse(result_sets, key_field="memory_id", limit=limit)
+
+    def query_dynamic_memories(self, query: str, limit: int = 5) -> tuple[MemoryRecord, ...]:
+        return tuple(
+            MemoryRecord(item["memory_id"], item["main_class"], item["sub_class"], item["text"])
+            for item in self.search_dynamic_fts(query, limit)
+        )
 
     def query_canonical_memories(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         return [_as_mapping(item) for item in self.query_dynamic_memories(query, limit)]
+
+    def rebuild_indexes(
+        self,
+        *,
+        dynamic_embeddings: dict[str, list[float]],
+        vector_dim: int,
+        embedding_provider: str,
+        embedding_model: str,
+    ) -> None:
+        """Rebuild only derived FTS/vector state from canonical memories."""
+        snapshot = self.read_snapshot()
+        dynamic = tuple(
+            item for item in snapshot.memories if item.main_class in DYNAMIC_MEMORY_CLASSES
+        )
+        if set(dynamic_embeddings) != {item.memory_id for item in dynamic}:
+            raise RuntimeError("Rebuild requires one embedding for every dynamic memory")
+        if any(len(vector) != vector_dim for vector in dynamic_embeddings.values()):
+            raise RuntimeError("Rebuild embedding dimension does not match vector_dim")
+        with self.connect() as conn:
+            conn.execute("begin immediate")
+            conn.execute("delete from canonical_fts")
+            conn.execute("drop table if exists memory_vec")
+            conn.execute("delete from memory_vector_map")
+            if self.vec_backend == "sqlite-vec":
+                conn.execute(
+                    f"create virtual table memory_vec using vec0(embedding float[{vector_dim}])"
+                )
+            else:
+                conn.execute(
+                    "create table memory_vec(rowid integer primary key, embedding_json text not null)"
+                )
+            for record in dynamic:
+                conn.execute(
+                    "insert into canonical_fts(memory_id, tokens) values (?, ?)",
+                    (record.memory_id, fts_index_text(f"{record.sub_class} {record.text}")),
+                )
+                conn.execute(
+                    "insert into memory_vector_map(memory_id) values (?)", (record.memory_id,)
+                )
+                rowid = int(
+                    conn.execute(
+                        "select rowid from memory_vector_map where memory_id=?",
+                        (record.memory_id,),
+                    ).fetchone()["rowid"]
+                )
+                vector = vector_json(dynamic_embeddings[record.memory_id])
+                column = "embedding" if self.vec_backend == "sqlite-vec" else "embedding_json"
+                conn.execute(
+                    f"insert into memory_vec(rowid, {column}) values (?, ?)", (rowid, vector)
+                )
+            metadata = {
+                "vector_dim": str(vector_dim),
+                "embedding_provider": embedding_provider,
+                "embedding_model": embedding_model,
+                "fts_tokenizer_version": FTS_TOKENIZER_VERSION,
+                "vec_backend": self.vec_backend,
+            }
+            for key, value in metadata.items():
+                conn.execute(
+                    "insert into metadata(key, value) values(?, ?) "
+                    "on conflict(key) do update set value=excluded.value",
+                    (key, value),
+                )
+        self._vector_dim = vector_dim
 
     def commit_snapshot(
         self,
@@ -324,6 +520,7 @@ class MemoryDatabase:
         publish_expected_text: str | None = None,
         publish_target_text: str | None = None,
         stage_publish: bool = False,
+        dynamic_embeddings: dict[str, list[float]] | None = None,
     ) -> int:
         """Atomically persist the event, full snapshot, FTS rows, and next revision."""
         if snapshot.revision != expected_revision:
@@ -331,6 +528,8 @@ class MemoryDatabase:
                 f"Snapshot revision {snapshot.revision} does not match expected revision {expected_revision}"
             )
         records = tuple(_coerce_record(item) for item in snapshot.memories)
+        if len({item.memory_id for item in records}) != len(records):
+            raise sqlite3.IntegrityError("duplicate memory_id in snapshot")
         with self.connect() as conn:
             conn.execute("begin immediate")
             row = conn.execute("select value from metadata where key='revision'").fetchone()
@@ -343,18 +542,82 @@ class MemoryDatabase:
                 "insert into raw_events(event_id, ts, session_key, history_text, plain_text, candidate_type) values (?, ?, ?, ?, ?, ?)",
                 (event_id, ts, session_key, history_text, plain_text, candidate_type),
             )
-            conn.execute("delete from canonical_memories")
-            conn.execute("delete from canonical_fts")
-            for record in records:
+            existing_rows = conn.execute(
+                "select memory_id, main_class, sub_class, text from canonical_memories"
+            ).fetchall()
+            existing = {str(row["memory_id"]): tuple(row) for row in existing_rows}
+            target = {record.memory_id: record for record in records}
+            removed_ids = set(existing) - set(target)
+            changed = [
+                record
+                for record in records
+                if existing.get(record.memory_id)
+                != (record.memory_id, record.main_class, record.sub_class, record.text)
+            ]
+            dynamic_changed = [
+                record for record in changed if record.main_class in DYNAMIC_MEMORY_CLASSES
+            ]
+            embeddings = dynamic_embeddings or {}
+            if {record.memory_id for record in dynamic_changed} != set(embeddings):
+                raise RuntimeError(
+                    "Embeddings are required for every added or changed dynamic memory"
+                )
+            for memory_id in removed_ids:
+                mapping = conn.execute(
+                    "select rowid from memory_vector_map where memory_id=?", (memory_id,)
+                ).fetchone()
+                if mapping is not None:
+                    conn.execute("delete from memory_vec where rowid=?", (int(mapping["rowid"]),))
+                conn.execute("delete from canonical_fts where memory_id=?", (memory_id,))
+                conn.execute("delete from canonical_memories where memory_id=?", (memory_id,))
+            for record in changed:
                 values = (record.memory_id, record.main_class, record.sub_class, record.text)
                 conn.execute(
-                    "insert into canonical_memories(memory_id, main_class, sub_class, text) values (?, ?, ?, ?)",
+                    "insert into canonical_memories(memory_id, main_class, sub_class, text) values (?, ?, ?, ?) on conflict(memory_id) do update set main_class=excluded.main_class, sub_class=excluded.sub_class, text=excluded.text",
                     values,
+                )
+                conn.execute("delete from canonical_fts where memory_id=?", (record.memory_id,))
+                if record.main_class not in DYNAMIC_MEMORY_CLASSES:
+                    mapping = conn.execute(
+                        "select rowid from memory_vector_map where memory_id=?", (record.memory_id,)
+                    ).fetchone()
+                    if mapping is not None:
+                        conn.execute(
+                            "delete from memory_vec where rowid=?", (int(mapping["rowid"]),)
+                        )
+                        conn.execute(
+                            "delete from memory_vector_map where memory_id=?", (record.memory_id,)
+                        )
+                    continue
+                conn.execute(
+                    "insert into canonical_fts(memory_id, tokens) values (?, ?)",
+                    (record.memory_id, fts_index_text(f"{record.sub_class} {record.text}")),
                 )
                 conn.execute(
-                    "insert into canonical_fts(memory_id, main_class, sub_class, text) values (?, ?, ?, ?)",
-                    values,
+                    "insert or ignore into memory_vector_map(memory_id) values (?)",
+                    (record.memory_id,),
                 )
+                rowid = int(
+                    conn.execute(
+                        "select rowid from memory_vector_map where memory_id=?", (record.memory_id,)
+                    ).fetchone()["rowid"]
+                )
+                vector = embeddings[record.memory_id]
+                if len(vector) != self._vector_dim:
+                    raise RuntimeError(
+                        f"Memory embedding dimension mismatch for {record.memory_id}"
+                    )
+                conn.execute("delete from memory_vec where rowid=?", (rowid,))
+                if self.vec_backend == "sqlite-vec":
+                    conn.execute(
+                        "insert into memory_vec(rowid, embedding) values (?, ?)",
+                        (rowid, vector_json(vector)),
+                    )
+                else:
+                    conn.execute(
+                        "insert into memory_vec(rowid, embedding_json) values (?, ?)",
+                        (rowid, vector_json(vector)),
+                    )
             new_revision = current_revision + 1
             conn.execute("update metadata set value=? where key='revision'", (str(new_revision),))
             if stage_publish:

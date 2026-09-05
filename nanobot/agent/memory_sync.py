@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Awaitable, Callable, Iterable
 from uuid import uuid4
 
 from nanobot.agent.memory_db import (
@@ -337,7 +337,10 @@ class MemorySynchronizer:
     def publish_history(self) -> None:
         _atomic_write(self.history_file, self.database.render_history_view())
 
-    def sync(self) -> MemorySyncResult:
+    async def sync(
+        self,
+        embed_records: Callable[[tuple[MemoryRecord, ...]], Awaitable[dict[str, list[float]]]],
+    ) -> MemorySyncResult:
         recovered = self.recover_pending()
         current = self.database.read_snapshot()
         target_text = render_memory_markdown(current.memories)
@@ -365,7 +368,7 @@ class MemorySynchronizer:
                 raise MemoryConflictError(
                     "MEMORY.md has no synchronization baseline and differs from the database snapshot"
                 )
-            return self._import_file(current, file_text)
+            return await self._import_file(current, file_text, embed_records)
 
         if file_text is None:
             self.database.stage_memory_publish(
@@ -398,9 +401,14 @@ class MemorySynchronizer:
             raise MemoryConflictError(
                 "Both MEMORY.md and the database changed from the last published revision"
             )
-        return self._import_file(current, file_text)
+        return await self._import_file(current, file_text, embed_records)
 
-    def _import_file(self, current: MemorySnapshot, file_text: str) -> MemorySyncResult:
+    async def _import_file(
+        self,
+        current: MemorySnapshot,
+        file_text: str,
+        embed_records: Callable[[tuple[MemoryRecord, ...]], Awaitable[dict[str, list[float]]]],
+    ) -> MemorySyncResult:
         parsed = parse_memory_markdown(file_text)
         target, changes = diff_memory_snapshots(current, parsed)
         normalized = render_memory_markdown(target.memories)
@@ -422,6 +430,12 @@ class MemorySynchronizer:
             f"[{now.strftime('%Y-%m-%d %H:%M')}] Imported manual MEMORY.md edit "
             f"(+{len(changes.added)} -{len(changes.removed)})"
         )
+        dynamic_embeddings = await embed_records(changes.added)
+        latest = self.database.read_snapshot()
+        if latest.revision != current.revision or self.read_memory_file() != file_text:
+            raise MemoryConflictError(
+                "Memory changed while manual edits were being embedded; no changes were committed"
+            )
         revision = self.database.commit_snapshot(
             target,
             expected_revision=current.revision,
@@ -434,6 +448,7 @@ class MemorySynchronizer:
             publish_expected_text=file_text,
             publish_target_text=normalized,
             stage_publish=True,
+            dynamic_embeddings=dynamic_embeddings,
         )
         self.publish_pending()
         return MemorySyncResult(MemorySyncStatus.IMPORTED, revision, changes)

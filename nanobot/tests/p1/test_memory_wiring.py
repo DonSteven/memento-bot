@@ -7,13 +7,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import ValidationError
 
-from nanobot.agent.loop import AgentLoop
 from nanobot.agent.memory_db import MemoryWriteResult
 from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.config.loader import load_config
 from nanobot.config.schema import MemoryConfig
 from nanobot.providers.base import GenerationSettings
+from nanobot.tests.memory_test_utils import TestAgentLoop as AgentLoop
 
 
 def _provider():
@@ -30,7 +30,8 @@ def test_agent_loop_uses_one_memory_service_for_context_and_archival(tmp_path) -
 
 
 def test_memory_mode_configuration_was_removed() -> None:
-    assert MemoryConfig().model_dump() == {}
+    assert MemoryConfig().embedding.model == "text-embedding-v4"
+    assert MemoryConfig().dynamic_top_k == 5
     with pytest.raises(ValidationError):
         MemoryConfig.model_validate({"mode": "v2"})
 
@@ -58,7 +59,9 @@ async def test_new_keeps_pending_session_when_database_archive_fails(tmp_path) -
     )
 
     assert response is not None and "archival failed" in response.content
-    assert [item["content"] for item in loop.sessions.get_or_create("cli:test").messages] == ["remember this"]
+    assert [item["content"] for item in loop.sessions.get_or_create("cli:test").messages] == [
+        "remember this"
+    ]
 
 
 @pytest.mark.asyncio

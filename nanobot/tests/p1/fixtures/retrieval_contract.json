@@ -15,10 +15,10 @@
       "constraints-1"
     ],
     "retrieved_ids": [
-      "projects-0",
-      "projects-1",
       "daily_life-0",
-      "daily_life-1"
+      "daily_life-1",
+      "plans_commitments-0",
+      "projects-0"
     ]
   },
   "notes": "Retrieved ID order is the deterministic SQLite bm25 and tie-break order for this fixture. Core records do not consume the dynamic limit."

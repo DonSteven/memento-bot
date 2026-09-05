@@ -275,13 +275,17 @@ def test_snapshot_fixtures_keep_knowledge_updates_latest_only(tmp_path: Path) ->
         assert len(case["canonical_snapshot"]) == 1
 
 
-def test_seed_snapshot_writes_db_and_views(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_seed_snapshot_writes_db_and_views(tmp_path: Path) -> None:
     snapshot = [
         _memory("personal_profile", "education", "User graduated with a degree in Applied Cartography."),
         _memory("preferences", "reply_style", "User prefers concise answers."),
     ]
 
-    seeded = query_eval._seed_snapshot(tmp_path, snapshot)
+    adapter = query_eval._RetrievalEmbeddingAdapter(
+        _FakeEmbedder({snapshot[0]["text"]: [1.0, 0.0], snapshot[1]["text"]: [0.0, 1.0]})
+    )
+    seeded = await query_eval._seed_snapshot(tmp_path, snapshot, adapter)
     db = query_eval.MemoryDatabase(tmp_path)
 
     assert seeded == snapshot
@@ -320,6 +324,33 @@ def test_deterministic_answer_match_accepts_aliases() -> None:
     )
 
 
+@pytest.mark.parametrize(("config", "query_vector", "expected_count"), [
+    (None, [0.0, 1.0], 0),
+    (None, [0.6, 0.8], 1),
+    (query_eval.MemoryConfig(vector_similarity_threshold=0.7, dynamic_top_k=8), [0.6, 0.8], 0),
+])
+def test_query_eval_uses_and_reports_actual_retrieval_config(config, query_vector, expected_count):
+    memory = _memory("projects", "active", "向朋友借书")
+    question = "语义检索"
+    case = {
+        "case_id": "relevance_gate", "level": "L0",
+        "question_date": "2026/09/05 (Sat) 12:00",
+        "source_question_id": "gate", "source_question_type": "single-session-user",
+        "question": question, "gold_answer": "借书", "gold_answer_aliases": [],
+        "canonical_snapshot": [memory], "gold_support_memories": [memory],
+        "gold_forbidden_memories": [],
+    }
+    report = run_memory_v2_query_eval(
+        cases=[case], model="test-model", memory_config=config,
+        answer_provider=_ScriptedProvider([LLMResponse(content="借书")]),
+        embedder=_FakeEmbedder({memory["text"]: [1.0, 0.0], question: query_vector}),
+    )
+    expected_config = config or query_eval.MemoryConfig()
+    assert len(report["cases"][0]["retrieved_memories"]) == expected_count
+    assert report["retrieval_config"] == expected_config.model_dump(exclude={"embedding"})
+    assert report["top_k"] == expected_config.dynamic_top_k
+
+
 def test_run_memory_v2_query_eval_snapshot_mode_scores_retrieval_answer_without_stale(tmp_path: Path) -> None:
     cases_root = _write_mode_fixture(tmp_path, "snapshot")
     cases = load_memory_query_cases(cases_root, mode="snapshot")
@@ -330,6 +361,8 @@ def test_run_memory_v2_query_eval_snapshot_mode_scores_retrieval_answer_without_
             "User's personal best time in the indoor rowing sprint is 18 minutes and 40 seconds.": [0.0, 1.0],
             "User's personal best time in the indoor rowing sprint is 21 minutes and 15 seconds.": [0.0, 0.9],
             "User prefers concise answers.": [0.5, 0.5],
+            "What degree did I graduate with?": [1.0, 0.0],
+            "What is my personal best time in the indoor rowing sprint?": [0.0, 1.0],
         }
     )
 
@@ -373,6 +406,7 @@ def test_run_memory_v2_query_eval_replay_mode_smoke(tmp_path: Path) -> None:
         {
             "User's personal best time in the indoor rowing sprint is 18 minutes and 40 seconds.": [1.0, 0.0],
             "User's personal best time in the indoor rowing sprint is 21 minutes and 15 seconds.": [0.0, 1.0],
+            "What is my personal best time in the indoor rowing sprint?": [1.0, 0.0],
         }
     )
 
@@ -441,6 +475,7 @@ def test_render_and_save_query_report(tmp_path: Path) -> None:
         "embedding_model": "fake-model",
         "top_k": 5,
         "threshold": 0.82,
+        "retrieval_config": query_eval.MemoryConfig().model_dump(exclude={"embedding"}),
         "total_cases": 1,
         "summary": {
             "overall": {

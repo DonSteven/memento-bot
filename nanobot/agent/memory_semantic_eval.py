@@ -12,6 +12,7 @@ from typing import Any, Protocol
 from nanobot.agent.memory_db import MemoryDatabase, MemoryRecord, MemorySnapshot
 from nanobot.agent.memory_service import MemoryService
 from nanobot.agent.memory_sync import MemorySynchronizer
+from nanobot.config.schema import MemoryConfig
 
 REPORT_VERSION = 1
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -28,6 +29,29 @@ _DEFAULT_FIXTURE_ROOT = Path("nanobot/tests/phase_7/fixtures/memory_eval_v2")
 class EmbeddingBackend(Protocol):
     def encode_texts(self, texts: list[str]) -> list[list[float]]:
         """Encode texts into normalized embedding vectors."""
+
+
+class _StorageEmbedding:
+    dimension = 1
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0] for _ in texts]
+
+    async def embed_query(self, text: str) -> list[float]:
+        return [-1.0]
+
+
+def _evaluation_memory_service(workspace: Path, provider: Any, model: str) -> MemoryService:
+    return MemoryService(
+        workspace,
+        provider,
+        model,
+        database=MemoryDatabase(workspace, vec_backend="array"),
+        embedder=_StorageEmbedding(),
+        config=MemoryConfig.model_validate(
+            {"embedding": {"dimensions": 1, "model": "evaluation-storage"}}
+        ),
+    )
 
 
 class _SentenceTransformerBackend:
@@ -788,11 +812,10 @@ def _aggregate_group(case_results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _inject_prior_snapshot(workspace: Path, snapshot: list[dict[str, str]]) -> None:
+async def _inject_prior_snapshot(service: MemoryService, snapshot: list[dict[str, str]]) -> None:
     if not snapshot:
         return
-    db = MemoryDatabase(workspace)
-    db.initialize()
+    db = service.database
     records = tuple(
         MemoryRecord.create(item["main_class"], item["sub_class"], item["text"])
         for item in snapshot
@@ -801,8 +824,13 @@ def _inject_prior_snapshot(workspace: Path, snapshot: list[dict[str, str]]) -> N
         MemorySnapshot(0, records), expected_revision=0, event_id="eval-seed",
         ts="1970-01-01T00:00:00", session_key="eval", history_text="",
         candidate_type="fixture",
+        dynamic_embeddings={
+            item.memory_id: [1.0]
+            for item in records
+            if item.main_class not in {"personal_profile", "preferences", "constraints"}
+        },
     )
-    MemorySynchronizer(db).sync()
+    await MemorySynchronizer(db).sync(service._embed_records)
 
 
 async def _run_semantic_case(
@@ -814,9 +842,8 @@ async def _run_semantic_case(
     case_id = case["case_id"]
     with TemporaryDirectory(prefix=f"nanobot-memory-semantic-{case_id}-") as tmp:
         workspace = Path(tmp)
-        _inject_prior_snapshot(workspace, case["prior_snapshot"])
-
-        service = MemoryService(workspace, provider, model)
+        service = _evaluation_memory_service(workspace, provider, model)
+        await _inject_prior_snapshot(service, case["prior_snapshot"])
         result = await service.consolidate(case["conversation"], session_key="eval")
         db = service.database
         memory_text = db.memory_file.read_text(encoding="utf-8") if db.memory_file.exists() else ""

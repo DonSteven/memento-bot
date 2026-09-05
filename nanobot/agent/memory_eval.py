@@ -21,8 +21,8 @@ from nanobot.agent.memory_service import MemoryService
 from nanobot.agent.memory_sync import (
     MemorySynchronizer,
     parse_memory_markdown,
-    render_memory_markdown,
 )
+from nanobot.config.schema import MemoryConfig
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from nanobot.session.manager import Session, SessionManager
 
@@ -171,7 +171,7 @@ def _run_boundary_replay(mode: str, fixture: dict[str, Any]) -> ReplayResult:
     with TemporaryDirectory(prefix=f"nanobot-memory-boundary-{mode}-") as tmp:
         workspace = Path(tmp)
         provider = _ScriptedProvider([])
-        service = MemoryService(workspace, provider, "test-model")
+        service = _evaluation_memory_service(workspace, provider, "test-model")
         session = Session(key=fixture["session_key"], messages=fixture["messages"])
         consolidator = MemoryConsolidator(
             memory_service=service,
@@ -222,7 +222,7 @@ async def _run_v2_replay(fixture: dict[str, Any]) -> ReplayResult:
         provider = _ScriptedProvider([
             _tool_response("save_memory_structured", "v2_call_1", fixture["tool_arguments"]),
         ])
-        service = MemoryService(workspace, provider, "test-model")
+        service = _evaluation_memory_service(workspace, provider, "test-model")
         result = await service.consolidate(fixture["messages"], session_key="eval")
         memory_text = service.database.memory_file.read_text(encoding="utf-8")
         history_text = service.database.history_file.read_text(encoding="utf-8")
@@ -253,7 +253,7 @@ async def _run_v2_retrieval_replay(fixture: dict[str, Any]) -> ReplayResult:
             _tool_response("save_memory_structured", "v2_retrieval_seed_call_1", fixture["tool_arguments"]),
         ])
 
-        service = MemoryService(workspace, provider, "test-model")
+        service = _evaluation_memory_service(workspace, provider, "test-model")
         await service.consolidate(fixture["messages"], session_key="eval")
         builder = ContextBuilder(workspace)
         query = "Please answer concisely."
@@ -562,24 +562,46 @@ def _score_memory_extraction(
     }
 
 
-def _inject_prior_memory(workspace: Path, prior_memory_markdown: str) -> None:
+class _StorageEmbedding:
+    dimension = 1
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0] for _ in texts]
+
+    async def embed_query(self, text: str) -> list[float]:
+        return [-1.0]
+
+
+def _evaluation_memory_service(workspace: Path, provider: Any, model: str) -> MemoryService:
+    return MemoryService(
+        workspace,
+        provider,
+        model,
+        database=MemoryDatabase(workspace, vec_backend="array"),
+        embedder=_StorageEmbedding(),
+        config=MemoryConfig.model_validate(
+            {"embedding": {"dimensions": 1, "model": "evaluation-storage"}}
+        ),
+    )
+
+
+async def _inject_prior_memory(service: MemoryService, prior_memory_markdown: str) -> None:
     if not prior_memory_markdown.strip():
         return
     snapshot = parse_memory_markdown(prior_memory_markdown)
-    memory_dir = workspace / "memory"
-    memory_dir.mkdir(parents=True, exist_ok=True)
-    (memory_dir / "MEMORY.md").write_text(
-        render_memory_markdown(snapshot), encoding="utf-8"
-    )
     if snapshot:
-        db = MemoryDatabase(workspace)
-        db.initialize()
+        db = service.database
         db.commit_snapshot(
             MemorySnapshot(0, snapshot), expected_revision=0, event_id="eval-seed",
             ts="1970-01-01T00:00:00", session_key="eval", history_text="",
             candidate_type="fixture",
+            dynamic_embeddings={
+                item.memory_id: [1.0]
+                for item in snapshot
+                if item.main_class not in {"personal_profile", "preferences", "constraints"}
+            },
         )
-        MemorySynchronizer(db).sync()
+        await MemorySynchronizer(db).sync(service._embed_records)
 
 
 async def _run_v2_memory_extraction_case(
@@ -591,10 +613,9 @@ async def _run_v2_memory_extraction_case(
     case_id = str(case.get("case_id") or "case")
     with TemporaryDirectory(prefix=f"nanobot-memory-extraction-{case_id}-v2-") as tmp:
         workspace = Path(tmp)
-        _inject_prior_memory(workspace, str(case.get("prior_memory_markdown") or ""))
-
         provider = provider_factory(case)
-        service = MemoryService(workspace, provider, model)
+        service = _evaluation_memory_service(workspace, provider, model)
+        await _inject_prior_memory(service, str(case.get("prior_memory_markdown") or ""))
         result = await service.consolidate(case.get("conversation") or [], session_key="eval")
         db = service.database
         memory_text = db.memory_file.read_text(encoding="utf-8") if db.memory_file.exists() else ""

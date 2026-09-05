@@ -10,7 +10,7 @@ from nanobot.providers.base import LLMResponse, ToolCallRequest
 
 
 def _make_loop(tmp_path):
-    from nanobot.agent.loop import AgentLoop
+    from nanobot.tests.memory_test_utils import TestAgentLoop as AgentLoop
     from nanobot.bus.queue import MessageBus
 
     bus = MessageBus()

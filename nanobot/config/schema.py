@@ -158,14 +158,10 @@ class ToolsConfig(Base):
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
 
-class MemoryConfig(Base):
-    """Persistent memory configuration."""
-
-    model_config = ConfigDict(extra="forbid")
 
 
-class KnowledgeEmbeddingConfig(Base):
-    """Embedding API used by the external web knowledge base."""
+class EmbeddingConfig(Base):
+    """DashScope embedding configuration shared by memory and knowledge retrieval."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -173,6 +169,19 @@ class KnowledgeEmbeddingConfig(Base):
     model: str = "text-embedding-v4"
     api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     dimensions: int = Field(default=1024, gt=0)
+
+
+class MemoryConfig(Base):
+    """Persistent semantic memory configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
+    fts_recall_limit: int = Field(default=24, ge=1, le=100)
+    vector_recall_limit: int = Field(default=24, ge=1, le=100)
+    dynamic_top_k: int = Field(default=5, ge=1, le=100)
+    dynamic_token_budget: int = Field(default=1200, ge=0)
+    vector_similarity_threshold: float = Field(default=0.35, ge=-1.0, le=1.0)
 
 
 class KnowledgeRerankConfig(Base):
@@ -193,7 +202,7 @@ class KnowledgeConfig(Base):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-    embedding: KnowledgeEmbeddingConfig = Field(default_factory=KnowledgeEmbeddingConfig)
+    embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     rerank: KnowledgeRerankConfig = Field(default_factory=KnowledgeRerankConfig)
     chunk_chars: int = Field(default=800, ge=200)
     chunk_overlap_chars: int = Field(default=150, ge=0)

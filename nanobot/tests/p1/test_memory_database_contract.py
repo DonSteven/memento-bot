@@ -17,7 +17,7 @@ def _record(memory_id: str, main_class: str, text: str, sub_class: str = "fact")
 
 
 def _commit(db: MemoryDatabase, records: tuple[MemoryRecord, ...], revision: int = 0) -> int:
-    db.initialize()
+    db.initialize(3, embedding_provider="dashscope", embedding_model="fixed-test")
     return db.commit_snapshot(
         MemorySnapshot(revision, records),
         expected_revision=revision,
@@ -25,6 +25,11 @@ def _commit(db: MemoryDatabase, records: tuple[MemoryRecord, ...], revision: int
         ts=f"2026-09-05T00:00:0{revision}",
         session_key="cli:test",
         history_text=f"history {revision}",
+        dynamic_embeddings={
+            item.memory_id: [1.0, 0.0, 0.0]
+            for item in records
+            if item.main_class in {"projects", "daily_life", "plans_commitments"}
+        },
     )
 
 
@@ -105,11 +110,14 @@ def test_initialize_preserves_existing_snapshot_and_index(tmp_path) -> None:
         assert list(conn.iterdump()) == before
 
 
-@pytest.mark.parametrize("record", [
-    _record("invalid", "unknown", "fact"),
-    _record("invalid", "projects", "fact", sub_class=" "),
-    _record("invalid", "projects", " "),
-])
+@pytest.mark.parametrize(
+    "record",
+    [
+        _record("invalid", "unknown", "fact"),
+        _record("invalid", "projects", "fact", sub_class=" "),
+        _record("invalid", "projects", " "),
+    ],
+)
 def test_invalid_record_does_not_replace_committed_snapshot(tmp_path, record) -> None:
     db = MemoryDatabase(tmp_path)
     _commit(db, (_record("project", "projects", "Nanobot project"),))

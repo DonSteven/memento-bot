@@ -49,11 +49,12 @@ def test_render_history_markdown_from_fixture() -> None:
     assert rendered == fixture["expected_history_markdown"]
 
 
-def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
+@pytest.mark.asyncio
+async def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
     fixture = _load_fixture("render_views")
-    db = MemoryDatabase(tmp_path)
+    db = MemoryDatabase(tmp_path, vec_backend="array")
 
-    db.initialize()
+    db.initialize(1, embedding_provider="dashscope", embedding_model="test")
     records = tuple(
         MemoryRecord(
             memory["memory_id"], memory["main_class"], memory["sub_class"], memory["text"]
@@ -71,9 +72,19 @@ def test_write_views_writes_memory_and_history_files(tmp_path) -> None:
             history_text=event["history_text"],
             plain_text=event.get("plain_text", ""),
             candidate_type=event.get("candidate_type") or "fixture",
+            dynamic_embeddings={
+                item.memory_id: [1.0]
+                for item in records
+                if item.main_class in {"projects", "daily_life", "plans_commitments"}
+            }
+            if revision == 0
+            else {},
         )
 
-    MemorySynchronizer(db).sync()
+    async def embed_records(items):
+        return {item.memory_id: [1.0] for item in items}
+
+    await MemorySynchronizer(db).sync(embed_records)
 
     assert db.memory_file.read_text(encoding="utf-8") == fixture["expected_memory_markdown"]
     assert db.history_file.read_text(encoding="utf-8") == fixture["expected_history_markdown"]

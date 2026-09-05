@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import nanobot.agent.memory as memory_module
-from nanobot.agent.loop import AgentLoop
+from nanobot.tests.memory_test_utils import TestAgentLoop as AgentLoop
 from nanobot.agent.memory_db import MemoryContext, MemoryWriteResult
 from nanobot.bus.queue import MessageBus
 from nanobot.providers.base import LLMResponse

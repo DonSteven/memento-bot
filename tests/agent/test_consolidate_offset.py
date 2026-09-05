@@ -487,7 +487,7 @@ class TestNewCommandArchival:
 
     @staticmethod
     def _make_loop(tmp_path: Path):
-        from nanobot.agent.loop import AgentLoop
+        from nanobot.tests.memory_test_utils import TestAgentLoop as AgentLoop
         from nanobot.bus.queue import MessageBus
         from nanobot.providers.base import LLMResponse
 

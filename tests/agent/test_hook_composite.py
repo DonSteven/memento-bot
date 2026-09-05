@@ -238,7 +238,7 @@ async def test_composite_empty_hooks_no_ops():
 
 
 def _make_loop(tmp_path, hooks=None):
-    from nanobot.agent.loop import AgentLoop
+    from nanobot.tests.memory_test_utils import TestAgentLoop as AgentLoop
     from nanobot.bus.queue import MessageBus
 
     bus = MessageBus()

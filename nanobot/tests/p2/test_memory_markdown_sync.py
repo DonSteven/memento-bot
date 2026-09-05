@@ -7,7 +7,6 @@ import pytest
 
 from nanobot.agent.memory import MemoryConsolidator
 from nanobot.agent.memory_db import MemoryDatabase, MemoryRecord, MemorySnapshot
-from nanobot.agent.memory_service import MemoryService
 from nanobot.agent.memory_sync import (
     MarkdownValidationError,
     MemoryConflictError,
@@ -18,6 +17,11 @@ from nanobot.agent.memory_sync import (
     render_memory_markdown,
 )
 from nanobot.session.manager import SessionManager
+from nanobot.tests.memory_test_utils import TestMemoryService as MemoryService
+
+
+async def _empty_embeddings(records):
+    return {}
 
 
 def _provider() -> AsyncMock:
@@ -44,6 +48,11 @@ def _seed(db: MemoryDatabase, records: tuple[MemoryRecord, ...]) -> int:
         ts="2026-09-05T00:00:00",
         session_key="test",
         history_text="seed",
+        dynamic_embeddings={
+            item.memory_id: [1.0, 0.0, 0.0]
+            for item in records
+            if item.main_class in {"projects", "daily_life", "plans_commitments"}
+        },
     )
 
 
@@ -150,7 +159,7 @@ async def test_manual_core_and_dynamic_edits_apply_on_next_context(tmp_path) -> 
 @pytest.mark.asyncio
 async def test_add_delete_subclass_change_and_category_move_commit_exact_snapshot(tmp_path) -> None:
     db = MemoryDatabase(tmp_path)
-    db.initialize()
+    db.initialize(3, embedding_provider="dashscope", embedding_model="fixed-test")
     original = (
         MemoryRecord.create("preferences", "style", "Concise"),
         MemoryRecord.create("projects", "active", "Alpha"),
@@ -158,7 +167,7 @@ async def test_add_delete_subclass_change_and_category_move_commit_exact_snapsho
     )
     _seed(db, original)
     sync = MemorySynchronizer(db)
-    sync.sync()
+    await sync.sync(_empty_embeddings)
     edited_records = (
         MemoryRecord.create("preferences", "detail", "Concise"),
         MemoryRecord.create("constraints", "active", "Alpha"),
@@ -203,7 +212,7 @@ async def test_invalid_edit_is_rejected_as_one_unit_and_file_is_preserved(tmp_pa
 @pytest.mark.asyncio
 async def test_repeated_sync_is_revision_stable_and_valid_empty_template_clears(tmp_path) -> None:
     db = MemoryDatabase(tmp_path)
-    db.initialize()
+    db.initialize(3, embedding_provider="dashscope", embedding_model="fixed-test")
     _seed(db, (MemoryRecord.create("preferences", "style", "Concise"),))
     service = MemoryService(tmp_path, _provider(), "test-model", database=db)
     await service.sync_markdown()
@@ -222,7 +231,7 @@ async def test_repeated_sync_is_revision_stable_and_valid_empty_template_clears(
 @pytest.mark.asyncio
 async def test_missing_view_is_rebuilt_but_empty_file_is_not_a_clear_command(tmp_path) -> None:
     db = MemoryDatabase(tmp_path)
-    db.initialize()
+    db.initialize(3, embedding_provider="dashscope", embedding_model="fixed-test")
     record = MemoryRecord.create("preferences", "style", "Concise")
     _seed(db, (record,))
     service = MemoryService(tmp_path, _provider(), "test-model", database=db)
@@ -303,11 +312,12 @@ async def test_edit_during_extraction_is_imported_and_stale_model_snapshot_is_di
     service.consolidate.assert_awaited_once()
 
 
-def test_pending_publish_recovers_when_file_is_still_expected_old_text(
+@pytest.mark.asyncio
+async def test_pending_publish_recovers_when_file_is_still_expected_old_text(
     tmp_path, monkeypatch
 ) -> None:
     service = MemoryService(tmp_path, _provider(), "test-model")
-    service.synchronizer.sync()
+    await service.synchronizer.sync(service._embed_records)
     old_text = service.database.memory_file.read_text(encoding="utf-8")
     target = (MemoryRecord.create("preferences", "style", "Recovered"),)
     service.database.commit_snapshot(
@@ -329,11 +339,14 @@ def test_pending_publish_recovers_when_file_is_still_expected_old_text(
     assert recovered.synchronizer.read_state().published_revision == 1
 
 
-def test_pending_publish_confirms_when_file_was_replaced_before_interruption(tmp_path) -> None:
+@pytest.mark.asyncio
+async def test_pending_publish_confirms_when_file_was_replaced_before_interruption(
+    tmp_path,
+) -> None:
     db = MemoryDatabase(tmp_path)
-    db.initialize()
+    db.initialize(3, embedding_provider="dashscope", embedding_model="fixed-test")
     sync = MemorySynchronizer(db)
-    sync.sync()
+    await sync.sync(_empty_embeddings)
     old_text = db.memory_file.read_text(encoding="utf-8")
     target = (MemoryRecord.create("preferences", "style", "Already replaced"),)
     target_text = render_memory_markdown(target)
@@ -356,11 +369,12 @@ def test_pending_publish_confirms_when_file_was_replaced_before_interruption(tmp
     assert recovered.synchronizer.read_state().published_text == target_text
 
 
-def test_pending_publish_conflict_preserves_human_file_and_database_target(tmp_path) -> None:
+@pytest.mark.asyncio
+async def test_pending_publish_conflict_preserves_human_file_and_database_target(tmp_path) -> None:
     db = MemoryDatabase(tmp_path)
-    db.initialize()
+    db.initialize(3, embedding_provider="dashscope", embedding_model="fixed-test")
     sync = MemorySynchronizer(db)
-    sync.sync()
+    await sync.sync(_empty_embeddings)
     old_text = db.memory_file.read_text(encoding="utf-8")
     database_target = (MemoryRecord.create("preferences", "style", "Database target"),)
     db.commit_snapshot(

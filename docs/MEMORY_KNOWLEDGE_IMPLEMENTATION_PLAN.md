@@ -28,7 +28,7 @@ real-model quality and parameter calibration require separate evaluation.
 | --- | --- | --- |
 | P1 | Complete | Unified memory service, revisioned writes and prepared context |
 | P2 | Complete | Validated Markdown synchronization and conflict recovery |
-| P3 | Planned | Incremental semantic memory indexes and bilingual retrieval |
+| P3 | Complete | Incremental semantic memory indexes and bilingual retrieval |
 | P4 | Planned | Evidence selection and structured sufficiency assessment |
 | P5 | Planned | One bounded online supplementation round |
 | P6 | Planned | Request budgeting and offline workspace conversion |

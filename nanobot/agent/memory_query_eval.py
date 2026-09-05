@@ -1,4 +1,4 @@
-"""FTS retrieval + answer evaluation runner for v2 memory query benchmarks."""
+"""Hybrid retrieval + answer evaluation runner for v2 memory query benchmarks."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from nanobot.agent.context import ContextBuilder
 from nanobot.agent.memory_db import MemoryDatabase, MemoryRecord, MemorySnapshot
 from nanobot.agent.memory_service import MemoryService
 from nanobot.agent.memory_sync import MemorySynchronizer
+from nanobot.config.schema import MemoryConfig
 
 REPORT_VERSION = 1
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -37,6 +38,31 @@ _DATE_FORMAT = "%Y/%m/%d (%a) %H:%M"
 class EmbeddingBackend(Protocol):
     def encode_texts(self, texts: list[str]) -> list[list[float]]:
         """Encode texts into normalized embedding vectors."""
+
+
+class _RetrievalEmbeddingAdapter:
+    def __init__(self, backend: EmbeddingBackend):
+        self.backend = backend
+        mapping = getattr(backend, "mapping", None)
+        sample_text = next(iter(mapping)) if isinstance(mapping, dict) and mapping else "dimension probe"
+        probe = backend.encode_texts([sample_text])
+        if len(probe) != 1 or not probe[0]:
+            raise RuntimeError("Evaluation embedding backend returned no probe vector")
+        self.dimension = len(probe[0])
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return self.backend.encode_texts(texts)
+
+    async def embed_query(self, text: str) -> list[float]:
+        return self.backend.encode_texts([text])[0]
+
+
+def _eval_memory_config(
+    adapter: _RetrievalEmbeddingAdapter, memory_config: MemoryConfig,
+) -> MemoryConfig:
+    values = memory_config.model_dump()
+    values["embedding"].update(dimensions=adapter.dimension, model="evaluation-embedding")
+    return MemoryConfig.model_validate(values)
 
 
 class _SentenceTransformerBackend:
@@ -587,20 +613,30 @@ def _core_memories(snapshot: list[dict[str, str]]) -> list[dict[str, str]]:
     return [item for item in snapshot if item["main_class"] in _CORE_CLASSES]
 
 
-def _seed_snapshot(workspace: Path, snapshot: list[dict[str, str]]) -> list[dict[str, str]]:
+async def _seed_snapshot(
+    workspace: Path,
+    snapshot: list[dict[str, str]],
+    adapter: _RetrievalEmbeddingAdapter,
+) -> list[dict[str, str]]:
     db = MemoryDatabase(workspace)
-    db.initialize()
+    db.initialize(adapter.dimension, embedding_provider="dashscope", embedding_model="evaluation-embedding")
     normalized_snapshot = _normalize_memory_snapshot(snapshot)
     records = tuple(
         MemoryRecord.create(item["main_class"], item["sub_class"], item["text"])
         for item in normalized_snapshot
     )
+    dynamic = [item for item in records if item.main_class not in _CORE_CLASSES]
+    vectors = await adapter.embed_documents([item.text for item in dynamic])
     db.commit_snapshot(
         MemorySnapshot(0, records), expected_revision=0, event_id="eval-seed",
         ts="1970-01-01T00:00:00", session_key="eval", history_text="",
         candidate_type="fixture",
+        dynamic_embeddings={item.memory_id: vector for item, vector in zip(dynamic, vectors)},
     )
-    MemorySynchronizer(db).sync()
+    async def embed_records(items):
+        values = await adapter.embed_documents([item.text for item in items])
+        return {item.memory_id: value for item, value in zip(items, values)}
+    await MemorySynchronizer(db).sync(embed_records)
     return normalized_snapshot
 
 
@@ -615,17 +651,24 @@ async def _evaluate_seeded_workspace(
     top_k: int,
     threshold: float,
     embedder: EmbeddingBackend,
+    retrieval_embedder: _RetrievalEmbeddingAdapter,
     retrieval_source_mode: str,
+    memory_config: MemoryConfig,
     replay_metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     db = MemoryDatabase(workspace)
     final_snapshot = _normalize_memory_snapshot(db.list_canonical_memories())
-    retrieved_memories = _normalize_memory_snapshot(
-        db.query_canonical_memories(case["question"], limit=top_k)
-    )
     core_memories = _core_memories(final_snapshot)
 
-    service = MemoryService(workspace, answer_provider, model, database=db)
+    service = MemoryService(
+        workspace, answer_provider, model, database=db,
+        embedder=retrieval_embedder, config=_eval_memory_config(retrieval_embedder, memory_config),
+    )
+    hits = await service.search_dynamic(case["question"], limit=top_k)
+    retrieved_memories = _normalize_memory_snapshot([
+        {"main_class": hit.record.main_class, "sub_class": hit.record.sub_class, "text": hit.record.text}
+        for hit in hits
+    ])
     builder = ContextBuilder(workspace)
     memory_context = await service.prepare_context(case["question"], retrieval_budget=top_k)
     answer_messages = builder.build_messages(
@@ -754,10 +797,12 @@ async def _run_snapshot_query_case(
     top_k: int,
     threshold: float,
     embedder: EmbeddingBackend,
+    memory_config: MemoryConfig,
 ) -> dict[str, Any]:
     with TemporaryDirectory(prefix=f"nanobot-memory-query-{case['case_id']}-") as tmp:
         workspace = Path(tmp)
-        _seed_snapshot(workspace, case["canonical_snapshot"])
+        retrieval_embedder = _RetrievalEmbeddingAdapter(embedder)
+        await _seed_snapshot(workspace, case["canonical_snapshot"], retrieval_embedder)
         return await _evaluate_seeded_workspace(
             workspace=workspace,
             case=case,
@@ -768,7 +813,9 @@ async def _run_snapshot_query_case(
             top_k=top_k,
             threshold=threshold,
             embedder=embedder,
+            retrieval_embedder=retrieval_embedder,
             retrieval_source_mode="snapshot",
+            memory_config=memory_config,
         )
 
 
@@ -783,13 +830,18 @@ async def _run_replay_query_case(
     top_k: int,
     threshold: float,
     embedder: EmbeddingBackend,
+    memory_config: MemoryConfig,
 ) -> dict[str, Any]:
     if not case["replay_sessions"]:
         raise ValueError(f"Replay mode requires replay_sessions for case {case['case_id']}")
 
     with TemporaryDirectory(prefix=f"nanobot-memory-query-{case['case_id']}-") as tmp:
         workspace = Path(tmp)
-        service = MemoryService(workspace, consolidate_provider, model)
+        retrieval_embedder = _RetrievalEmbeddingAdapter(embedder)
+        service = MemoryService(
+            workspace, consolidate_provider, model,
+            embedder=retrieval_embedder, config=_eval_memory_config(retrieval_embedder, memory_config),
+        )
         consolidate_results: list[bool] = []
         for session in case["replay_sessions"]:
             result = await service.consolidate(session["conversation"], session_key="eval")
@@ -804,7 +856,9 @@ async def _run_replay_query_case(
             top_k=top_k,
             threshold=threshold,
             embedder=embedder,
+            retrieval_embedder=retrieval_embedder,
             retrieval_source_mode="replay",
+            memory_config=memory_config,
             replay_metrics={
                 "session_count": len(case["replay_sessions"]),
                 "consolidate_success_rate": (
@@ -915,6 +969,7 @@ async def _run_memory_v2_query_eval_async(
     embedding_model: str,
     threshold: float,
     embedder: EmbeddingBackend,
+    memory_config: MemoryConfig,
 ) -> dict[str, Any]:
     if not cases:
         raise ValueError("At least one query evaluation case is required")
@@ -963,6 +1018,7 @@ async def _run_memory_v2_query_eval_async(
                     top_k=top_k,
                     threshold=threshold,
                     embedder=embedder,
+                    memory_config=memory_config,
                 )
             )
         else:
@@ -978,6 +1034,7 @@ async def _run_memory_v2_query_eval_async(
                     top_k=top_k,
                     threshold=threshold,
                     embedder=embedder,
+                    memory_config=memory_config,
                 )
             )
 
@@ -1005,6 +1062,7 @@ async def _run_memory_v2_query_eval_async(
         "embedding_model": embedding_model,
         "top_k": top_k,
         "threshold": threshold,
+        "retrieval_config": memory_config.model_dump(exclude={"embedding"}),
         "total_cases": len(case_results),
         "summary": {
             "overall": _aggregate_group(case_results),
@@ -1031,11 +1089,16 @@ def run_memory_v2_query_eval(
     level: str = "all",
     question_type: str = "all",
     source_dataset_path: Path | None = None,
-    top_k: int = DEFAULT_TOP_K,
+    top_k: int | None = None,
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     threshold: float = DEFAULT_RETRIEVAL_THRESHOLD,
     embedder: EmbeddingBackend | None = None,
+    memory_config: MemoryConfig | None = None,
 ) -> dict[str, Any]:
+    retrieval_values = (memory_config or MemoryConfig()).model_dump()
+    if top_k is not None:
+        retrieval_values["dynamic_top_k"] = top_k
+    resolved_memory_config = MemoryConfig.model_validate(retrieval_values)
     normalized_mode = mode.strip().lower()
     if normalized_mode not in _MODES:
         raise ValueError(f"Unsupported query evaluation mode: {mode}")
@@ -1076,10 +1139,11 @@ def run_memory_v2_query_eval(
             judge_model=resolved_judge_model,
             cases_source=cases_source,
             source_dataset=str(source_dataset) if source_dataset is not None else None,
-            top_k=top_k,
+            top_k=resolved_memory_config.dynamic_top_k,
             embedding_model=embedding_model,
             threshold=threshold,
             embedder=resolved_embedder,
+            memory_config=resolved_memory_config,
         )
     )
 
@@ -1107,7 +1171,8 @@ def render_memory_v2_query_report_markdown(report: dict[str, Any]) -> str:
         f"- Judge Model: `{report['judge_model']}`",
         f"- Embedding Model: `{report['embedding_model']}`",
         f"- Top K: `{report['top_k']}`",
-        f"- Retrieval Threshold: `{report['threshold']:.2f}`",
+        f"- Support Matching Threshold: `{report['threshold']:.2f}`",
+        f"- Retrieval Config: `{json.dumps(report['retrieval_config'], ensure_ascii=False, sort_keys=True)}`",
         "",
         "## Overall",
         "",

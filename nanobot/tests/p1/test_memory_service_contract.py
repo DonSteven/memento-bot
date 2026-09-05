@@ -10,9 +10,9 @@ from nanobot.agent.context import ContextBuilder
 from nanobot.agent.memory import MemoryConsolidator
 from nanobot.agent.memory_db import MemoryContext, MemoryRecord, MemorySnapshot
 from nanobot.agent.memory_pipeline import StructuredMemoryPipeline
-from nanobot.agent.memory_service import MemoryService
 from nanobot.providers.base import LLMResponse, ToolCallRequest
 from nanobot.session.manager import SessionManager
+from nanobot.tests.memory_test_utils import TestMemoryService as MemoryService
 
 
 def _provider(arguments: dict | None = None):
@@ -21,7 +21,9 @@ def _provider(arguments: dict | None = None):
         provider.chat_with_retry = AsyncMock(
             return_value=LLMResponse(
                 content=None,
-                tool_calls=[ToolCallRequest(id="call-1", name="save_memory_structured", arguments=arguments)],
+                tool_calls=[
+                    ToolCallRequest(id="call-1", name="save_memory_structured", arguments=arguments)
+                ],
             )
         )
     return provider
@@ -29,11 +31,20 @@ def _provider(arguments: dict | None = None):
 
 def _seed(service: MemoryService) -> None:
     classes = (
-        "personal_profile", "preferences", "constraints",
-        "projects", "daily_life", "plans_commitments",
+        "personal_profile",
+        "preferences",
+        "constraints",
+        "projects",
+        "daily_life",
+        "plans_commitments",
     )
     records = tuple(
-        MemoryRecord(f"{main_class}-{index}", main_class, f"slot-{index}", f"{main_class} nanobot fact {index}")
+        MemoryRecord(
+            f"{main_class}-{index}",
+            main_class,
+            f"slot-{index}",
+            f"{main_class} nanobot fact {index}",
+        )
         for main_class in classes
         for index in range(2)
     )
@@ -45,12 +56,19 @@ def _seed(service: MemoryService) -> None:
         ts="2026-09-05T00:00:00",
         session_key="test",
         history_text="seed",
+        dynamic_embeddings={
+            item.memory_id: [1.0, 0.0, 0.0]
+            for item in records
+            if item.main_class in {"projects", "daily_life", "plans_commitments"}
+        },
     )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("query", ["", "completely unrelated query"])
-async def test_core_memory_is_complete_once_for_empty_and_unrelated_queries(tmp_path, query) -> None:
+async def test_core_memory_is_complete_once_for_empty_and_unrelated_queries(
+    tmp_path, query
+) -> None:
     service = MemoryService(tmp_path, _provider(), "test-model")
     _seed(service)
 
@@ -71,13 +89,21 @@ async def test_dynamic_top_k_does_not_include_or_duplicate_core_memory(tmp_path)
     _seed(service)
 
     context = await service.prepare_context(
-        fixture["query"], retrieval_budget=fixture["retrieval_budget"],
+        fixture["query"],
+        retrieval_budget=fixture["retrieval_budget"],
     )
 
     assert [item.memory_id for item in context.core_items] == fixture["expected"]["core_ids"]
-    assert [item.memory_id for item in context.retrieved_items] == fixture["expected"]["retrieved_ids"]
-    assert all(item.main_class in set(fixture["dynamic_classes"]) for item in context.retrieved_items)
-    assert not ({item.memory_id for item in context.core_items} & {item.memory_id for item in context.retrieved_items})
+    assert [item.memory_id for item in context.retrieved_items] == fixture["expected"][
+        "retrieved_ids"
+    ]
+    assert all(
+        item.main_class in set(fixture["dynamic_classes"]) for item in context.retrieved_items
+    )
+    assert not (
+        {item.memory_id for item in context.core_items}
+        & {item.memory_id for item in context.retrieved_items}
+    )
 
 
 @pytest.mark.asyncio
@@ -93,7 +119,8 @@ async def test_pipeline_returns_complete_snapshot_without_storage_side_effects(t
     pipeline = StructuredMemoryPipeline(provider, "test-model")
 
     snapshot, history = await pipeline.extract_snapshot(
-        [{"role": "user", "content": "Remember alpha and beta"}], MemorySnapshot(7),
+        [{"role": "user", "content": "Remember alpha and beta"}],
+        MemorySnapshot(7),
     )
 
     assert snapshot.revision == 7
@@ -103,13 +130,17 @@ async def test_pipeline_returns_complete_snapshot_without_storage_side_effects(t
 
 
 @pytest.mark.asyncio
-async def test_committed_snapshot_reports_view_export_failure_without_losing_data(tmp_path, monkeypatch) -> None:
-    provider = _provider({
-        "history_entry": "[2026-09-05 10:00] saved",
-        "canonical_memories": [
-            {"main_class": "preferences", "sub_class": "style", "text": "Be concise"},
-        ],
-    })
+async def test_committed_snapshot_reports_view_export_failure_without_losing_data(
+    tmp_path, monkeypatch
+) -> None:
+    provider = _provider(
+        {
+            "history_entry": "[2026-09-05 10:00] saved",
+            "canonical_memories": [
+                {"main_class": "preferences", "sub_class": "style", "text": "Be concise"},
+            ],
+        }
+    )
     service = MemoryService(tmp_path, provider, "test-model")
     await service.sync_markdown()
     monkeypatch.setattr(
@@ -119,7 +150,8 @@ async def test_committed_snapshot_reports_view_export_failure_without_losing_dat
     )
 
     result = await service.consolidate(
-        [{"role": "user", "content": "Be concise"}], session_key="cli:test",
+        [{"role": "user", "content": "Be concise"}],
+        session_key="cli:test",
     )
 
     assert result.database_committed is True
@@ -127,6 +159,7 @@ async def test_committed_snapshot_reports_view_export_failure_without_losing_dat
     assert result.revision == 1
     assert service.database.read_snapshot().memories[0].text == "Be concise"
     assert len(service.database.list_raw_events()) == 1
+
 
 def test_context_builder_only_uses_prepared_memory_context(tmp_path) -> None:
     builder = ContextBuilder(tmp_path)
@@ -144,17 +177,22 @@ async def test_pipeline_retries_with_auto_when_forced_tool_choice_is_unsupported
         "canonical_memories": [],
     }
     provider = _provider()
-    provider.chat_with_retry = AsyncMock(side_effect=[
-        LLMResponse(content="tool_choice does not support forced calls", finish_reason="error"),
-        LLMResponse(
-            content=None,
-            tool_calls=[ToolCallRequest(id="call-2", name="save_memory_structured", arguments=valid)],
-        ),
-    ])
+    provider.chat_with_retry = AsyncMock(
+        side_effect=[
+            LLMResponse(content="tool_choice does not support forced calls", finish_reason="error"),
+            LLMResponse(
+                content=None,
+                tool_calls=[
+                    ToolCallRequest(id="call-2", name="save_memory_structured", arguments=valid)
+                ],
+            ),
+        ]
+    )
     pipeline = StructuredMemoryPipeline(provider, "test-model")
 
     snapshot, _ = await pipeline.extract_snapshot(
-        [{"role": "user", "content": "nothing to remember"}], MemorySnapshot(2),
+        [{"role": "user", "content": "nothing to remember"}],
+        MemorySnapshot(2),
     )
 
     assert snapshot == MemorySnapshot(2)
@@ -180,7 +218,8 @@ async def test_repeated_extraction_failure_raw_archives_without_changing_snapsho
     )
 
     result = await consolidator.archive_messages(
-        [{"role": "user", "content": "archive me"}], session_key="cli:test",
+        [{"role": "user", "content": "archive me"}],
+        session_key="cli:test",
     )
 
     assert result.database_committed and result.view_exported
@@ -210,7 +249,8 @@ async def test_committed_view_failure_is_not_re_extracted(tmp_path, monkeypatch)
     )
 
     result = await consolidator.archive_messages(
-        [{"role": "user", "content": "archive me"}], session_key="cli:test",
+        [{"role": "user", "content": "archive me"}],
+        session_key="cli:test",
     )
 
     assert result.database_committed is True and result.view_exported is False

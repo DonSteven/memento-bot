@@ -42,9 +42,9 @@ class ContextBuilder:
         if bootstrap:
             parts.append(bootstrap)
 
-        memory = memory_context.render() if memory_context is not None else ""
+        memory = memory_context.render_block() if memory_context is not None else ""
         if memory:
-            parts.append(f"# Memory\n\n{memory}")
+            parts.append(memory)
 
         always_skills = self.skills.get_always_skills() # 少量常驻核心技能
         if always_skills:

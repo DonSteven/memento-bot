@@ -883,13 +883,27 @@ Config file: `~/.nanobot/config.json`
 | `openai_codex` | LLM (Codex, OAuth) | `nanobot provider login openai-codex` |
 | `github_copilot` | LLM (GitHub Copilot, OAuth) | `nanobot provider login github-copilot` |
 
-### External web knowledge models
+### Semantic memory and external web knowledge models
 
-When external web knowledge is enabled, embedding and reranking use the DashScope API key from
-`providers.dashscope.apiKey`:
+Semantic personal-memory retrieval always uses the DashScope embedding API key from
+`providers.dashscope.apiKey`. External web knowledge uses the same embedding configuration and,
+when enabled, its reranker also uses that key:
 
 ```json
 {
+  "memory": {
+    "embedding": {
+      "provider": "dashscope",
+      "model": "text-embedding-v4",
+      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "dimensions": 1024
+    },
+    "ftsRecallLimit": 24,
+    "vectorRecallLimit": 24,
+    "dynamicTopK": 5,
+    "dynamicTokenBudget": 1200,
+    "vectorSimilarityThreshold": 0.35
+  },
   "knowledge": {
     "enabled": true,
     "embedding": {
@@ -909,10 +923,13 @@ When external web knowledge is enabled, embedding and reranking use the DashScop
 }
 ```
 
-The knowledge pipeline sends stored chunks as `document` embeddings and search text as a `query`
-embedding. The reranker derives DashScope's dedicated `/compatible-api/v1/reranks` endpoint from
+The memory and knowledge pipelines send stored text to DashScope as `document` embeddings and
+search text as a `query` embedding. Core memory is not embedded for retrieval and remains fully
+injected; only `projects`, `daily_life`, and `plans_commitments` are indexed. The reranker derives DashScope's dedicated `/compatible-api/v1/reranks` endpoint from
 the configured host, so the configured `apiBase` can share the chat/embedding host. Install the
-SQLite vector dependency with `uv sync --extra web_knowledge` before enabling this feature.
+SQLite vector dependency with `uv sync --extra web_knowledge` before running nanobot. Changing an
+embedding provider, model, dimension, or the FTS tokenizer version requires rebuilding the affected
+derived indexes; nanobot reports an explicit metadata mismatch instead of mixing incompatible data.
 
 <details>
 <summary><b>OpenAI Codex (OAuth)</b></summary>

@@ -16,12 +16,12 @@ import pytest
 
 from nanobot.agent.hook import AgentHook
 from nanobot.agent.knowledge import WebKnowledgeHook
-from nanobot.agent.loop import AgentLoop
 from nanobot.agent.runner import AgentRunResult
 from nanobot.agent.tools.knowledge import KnowledgeSearchTool
 from nanobot.bus.queue import MessageBus
 from nanobot.config.schema import Config, KnowledgeConfig
 from nanobot.nanobot import Nanobot
+from nanobot.tests.memory_test_utils import TestAgentLoop as AgentLoop
 
 
 def _make_provider() -> MagicMock:
@@ -33,20 +33,27 @@ def _make_provider() -> MagicMock:
 
 def _write_config(tmp_path: Path) -> Path:
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({
-        "providers": {"openrouter": {"apiKey": "sk-test-key"}},
-        "agents": {"defaults": {"model": "openai/gpt-4.1"}},
-        "knowledge": {
-            "enabled": False,
-            "embedding": {
-                "provider": "dashscope",
-                "model": "text-embedding-v4",
-                "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                "dimensions": 1024,
-            },
-            "docLimit": 6,
-        },
-    }))
+    config_path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "openrouter": {"apiKey": "sk-test-key"},
+                    "dashscope": {"apiKey": "sk-dashscope-test"},
+                },
+                "agents": {"defaults": {"model": "openai/gpt-4.1"}},
+                "knowledge": {
+                    "enabled": False,
+                    "embedding": {
+                        "provider": "dashscope",
+                        "model": "text-embedding-v4",
+                        "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                        "dimensions": 1024,
+                    },
+                    "docLimit": 6,
+                },
+            }
+        )
+    )
     return config_path
 
 
@@ -75,6 +82,7 @@ def test_nanobot_from_config_passes_knowledge_config(tmp_path: Path) -> None:
     assert bot._loop.knowledge_config.enabled is False
     assert bot._loop.knowledge_config.embedding.model == "text-embedding-v4"
     assert bot._loop.knowledge_config.doc_limit == 6
+    assert bot._loop.memory_config.embedding.model == "text-embedding-v4"
 
 
 def test_kb_search_tool_defaults_match_production_limits() -> None:
@@ -89,12 +97,14 @@ def test_kb_search_tool_defaults_match_production_limits() -> None:
 @pytest.mark.asyncio
 async def test_agent_loop_registers_kb_search_when_knowledge_enabled(tmp_path: Path) -> None:
     fake_service = MagicMock()
-    fake_service.search = AsyncMock(return_value={
-        "query": "linux",
-        "sufficient": True,
-        "candidate_parents": [],
-        "evidence_chunks": [],
-    })
+    fake_service.search = AsyncMock(
+        return_value={
+            "query": "linux",
+            "sufficient": True,
+            "candidate_parents": [],
+            "evidence_chunks": [],
+        }
+    )
 
     with patch("nanobot.agent.loop.WebKnowledgeService", return_value=fake_service) as service_cls:
         loop = AgentLoop(
