@@ -883,6 +883,37 @@ Config file: `~/.nanobot/config.json`
 | `openai_codex` | LLM (Codex, OAuth) | `nanobot provider login openai-codex` |
 | `github_copilot` | LLM (GitHub Copilot, OAuth) | `nanobot provider login github-copilot` |
 
+### External web knowledge models
+
+When external web knowledge is enabled, embedding and reranking use the DashScope API key from
+`providers.dashscope.apiKey`:
+
+```json
+{
+  "knowledge": {
+    "enabled": true,
+    "embedding": {
+      "provider": "dashscope",
+      "model": "text-embedding-v4",
+      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "dimensions": 1024
+    },
+    "rerank": {
+      "enabled": true,
+      "provider": "dashscope",
+      "model": "qwen3-rerank",
+      "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "instruct": "Given a web search query, retrieve relevant passages that answer the query."
+    }
+  }
+}
+```
+
+The knowledge pipeline sends stored chunks as `document` embeddings and search text as a `query`
+embedding. The reranker derives DashScope's dedicated `/compatible-api/v1/reranks` endpoint from
+the configured host, so the configured `apiBase` can share the chat/embedding host. Install the
+SQLite vector dependency with `uv sync --extra web_knowledge` before enabling this feature.
+
 <details>
 <summary><b>OpenAI Codex (OAuth)</b></summary>
 

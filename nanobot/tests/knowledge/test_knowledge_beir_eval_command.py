@@ -20,6 +20,7 @@ runner = CliRunner()
 def _fake_runtime_config(tmp_path: Path) -> SimpleNamespace:
     return SimpleNamespace(
         agents=SimpleNamespace(defaults=SimpleNamespace(model="test-model")),
+        providers=SimpleNamespace(dashscope=SimpleNamespace(api_key="sk-test")),
         workspace_path=tmp_path,
     )
 
@@ -116,7 +117,8 @@ def test_knowledge_beir_eval_command_passes_expected_arguments(tmp_path, monkeyp
 
     assert result.exit_code == 0
     assert captured["dataset"] == "scifact"
-    assert captured["embedding_model"] == "sentence-transformers/all-MiniLM-L6-v2"
+    assert captured["embedding_model"] == "text-embedding-v4"
+    assert captured["api_key"] == "sk-test"
     assert captured["bench_dir"] == tmp_path / "benchmarks" / "beir" / "scifact"
     assert "summary_model" not in captured
 

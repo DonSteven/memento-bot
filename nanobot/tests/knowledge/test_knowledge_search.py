@@ -17,7 +17,6 @@ from nanobot.agent.knowledge import (
     WebKnowledgeService,
     _build_child_blocks,
     _build_parent_blocks,
-    _SentenceTransformerCrossEncoderBackend,
 )
 from nanobot.agent.knowledge_db import WebKnowledgeDatabase
 from nanobot.config.schema import KnowledgeConfig
@@ -27,7 +26,7 @@ from nanobot.providers.base import LLMProvider, LLMResponse
 class _KeywordEmbedder:
     dimension = 5
 
-    def encode_texts(self, texts: list[str]) -> list[list[float]]:
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         for text in texts:
             lowered = text.lower()
@@ -41,6 +40,9 @@ class _KeywordEmbedder:
             norm = sqrt(sum(value * value for value in values)) or 1.0
             vectors.append([value / norm for value in values])
         return vectors
+
+    async def embed_query(self, text: str) -> list[float]:
+        return (await self.embed_documents([text]))[0]
 
 
 class _UnusedProvider(LLMProvider):
@@ -69,7 +71,7 @@ class _KeywordReranker:
     def __init__(self) -> None:
         self.calls: list[list[tuple[str, str]]] = []
 
-    def score_pairs(self, pairs: list[tuple[str, str]]) -> list[float]:
+    async def score_pairs(self, pairs: list[tuple[str, str]]) -> list[float]:
         self.calls.append(list(pairs))
         scores: list[float] = []
         for query, text in pairs:
@@ -112,15 +114,14 @@ def _service(tmp_path, provider: _UnusedProvider, *, reranker: _KeywordReranker 
         chunk_overlap_chars=20,
         doc_limit=10,
         evidence_limit=5,
+        rerank={"enabled": reranker is not None},
     )
     return WebKnowledgeService(
         workspace=tmp_path,
-        provider=provider,
-        model="test-model",
         config=config,
         db=WebKnowledgeDatabase(tmp_path, vec_backend="array"),
         embedder=_KeywordEmbedder(),
-        reranker=reranker or _KeywordReranker(),
+        reranker=reranker,
     )
 
 
@@ -387,23 +388,11 @@ async def test_service_reranks_top_child_pool_before_parent_aggregation(tmp_path
     assert all(count <= 2 for count in per_parent_counts.values())
 
 
-def test_service_fails_fast_when_rerank_model_dependencies_are_missing(tmp_path, monkeypatch) -> None:
-    provider = _UnusedProvider()
-
-    def _boom(self) -> None:
-        raise RuntimeError("missing cross encoder")
-
-    monkeypatch.setattr(_SentenceTransformerCrossEncoderBackend, "_ensure_model", _boom)
-
-    with pytest.raises(RuntimeError, match="missing cross encoder"):
+def test_service_requires_dashscope_key_for_configured_reranker(tmp_path) -> None:
+    with pytest.raises(ValueError, match="providers.dashscope.apiKey"):
         WebKnowledgeService(
             workspace=tmp_path,
-            provider=provider,
-            model="test-model",
-            config=KnowledgeConfig(
-                enabled=True,
-                rerank_model="cross-encoder/test-model",
-            ),
+            config=KnowledgeConfig(enabled=True),
             db=WebKnowledgeDatabase(tmp_path, vec_backend="array"),
             embedder=_KeywordEmbedder(),
         )

@@ -24,7 +24,7 @@ from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 class _KeywordEmbedder:
     dimension = 3
 
-    def encode_texts(self, texts: list[str]) -> list[list[float]]:
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         for text in texts:
             lowered = text.lower()
@@ -36,6 +36,9 @@ class _KeywordEmbedder:
             norm = sqrt(sum(value * value for value in values)) or 1.0
             vectors.append([value / norm for value in values])
         return vectors
+
+    async def embed_query(self, text: str) -> list[float]:
+        return (await self.embed_documents([text]))[0]
 
 
 class _UnusedProvider(LLMProvider):
@@ -76,9 +79,7 @@ def _success_payload(url: str) -> str:
 async def test_web_knowledge_hook_only_schedules_successful_text_fetches(tmp_path) -> None:
     service = WebKnowledgeService(
         workspace=tmp_path,
-        provider=_UnusedProvider(),
-        model="test-model",
-        config=KnowledgeConfig(enabled=True, rerank_model=""),
+        config=KnowledgeConfig.model_validate({"enabled": True, "rerank": {"enabled": False}}),
         db=WebKnowledgeDatabase(tmp_path, vec_backend="array"),
         embedder=_KeywordEmbedder(),
     )

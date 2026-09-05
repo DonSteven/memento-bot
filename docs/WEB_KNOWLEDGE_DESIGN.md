@@ -74,15 +74,16 @@ treated as instructions to execute tools or override system messages.
 
 ## Backend and configuration boundaries
 
-The current knowledge extra supplies local SentenceTransformer embeddings, a
-CrossEncoder reranker and sqlite-vec. Models and dimension settings belong to the configured backend.
-Tests inject deterministic embeddings and an in-memory-compatible vector backend
-so normal regression checks do not download models or call paid services.
+The knowledge backend uses asynchronous DashScope embedding and reranking APIs.
+Configure `providers.dashscope.apiKey`, `knowledge.embedding` and
+`knowledge.rerank`. The `web_knowledge` extra supplies sqlite-vec for local
+storage. Document and query embeddings use their respective input types.
+Embedding batches contain at most ten texts; response indexes, counts and
+vector dimensions are validated before normalized vectors are stored.
+Reranker results are aligned by their returned document indexes.
 
-The research plan considered remote embedding and reranking APIs. Their
-credentials, batch ordering, response validation and cost controls require a
-separate backend integration stage; they are not prerequisites for this local
-implementation.
+Tests inject fixed embeddings, fake rerankers and mocked HTTP responses. No
+real service calls or model downloads are required for these regression tests.
 
 SQLite extension loading belongs to the trusted backend loader. SQL values
 must be parameterized, and extension paths must not originate in fetched text.

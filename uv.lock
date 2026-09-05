@@ -1804,7 +1804,6 @@ memory-eval = [
     { name = "sentence-transformers" },
 ]
 web-knowledge = [
-    { name = "sentence-transformers" },
     { name = "sqlite-vec" },
 ]
 wecom = [
@@ -1855,7 +1854,6 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "scipy", marker = "extra == 'memory-eval'", specifier = ">=1.13.0,<2.0.0" },
     { name = "sentence-transformers", marker = "extra == 'memory-eval'", specifier = ">=3.0.0,<4.0.0" },
-    { name = "sentence-transformers", marker = "extra == 'web-knowledge'", specifier = ">=3.0.0,<4.0.0" },
     { name = "slack-sdk", specifier = ">=3.39.0,<4.0.0" },
     { name = "slackify-markdown", specifier = ">=0.2.0,<1.0.0" },
     { name = "socksio", specifier = ">=1.0.0,<2.0.0" },

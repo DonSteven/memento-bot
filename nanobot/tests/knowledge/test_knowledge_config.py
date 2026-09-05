@@ -38,7 +38,12 @@ def _write_config(tmp_path: Path) -> Path:
         "agents": {"defaults": {"model": "openai/gpt-4.1"}},
         "knowledge": {
             "enabled": False,
-            "embeddingModel": "sentence-transformers/test-model",
+            "embedding": {
+                "provider": "dashscope",
+                "model": "text-embedding-v4",
+                "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "dimensions": 1024,
+            },
             "docLimit": 6,
         },
     }))
@@ -52,7 +57,10 @@ def test_config_defaults_to_disabled_web_knowledge() -> None:
     assert config.knowledge.chunk_overlap_chars == 150
     assert config.knowledge.doc_limit == 10
     assert config.knowledge.evidence_limit == 5
-    assert config.knowledge.rerank_model == "BAAI/bge-reranker-v2-m3"
+    assert config.knowledge.embedding.model == "text-embedding-v4"
+    assert config.knowledge.embedding.dimensions == 1024
+    assert config.knowledge.rerank.model == "qwen3-rerank"
+    assert config.knowledge.rerank.enabled is True
     assert config.knowledge.child_fts_limit == 24
     assert config.knowledge.child_vec_limit == 24
     assert config.knowledge.rerank_child_pool == 24
@@ -65,7 +73,7 @@ def test_nanobot_from_config_passes_knowledge_config(tmp_path: Path) -> None:
     bot = Nanobot.from_config(config_path, workspace=tmp_path)
 
     assert bot._loop.knowledge_config.enabled is False
-    assert bot._loop.knowledge_config.embedding_model == "sentence-transformers/test-model"
+    assert bot._loop.knowledge_config.embedding.model == "text-embedding-v4"
     assert bot._loop.knowledge_config.doc_limit == 6
 
 
@@ -88,17 +96,19 @@ async def test_agent_loop_registers_kb_search_when_knowledge_enabled(tmp_path: P
         "evidence_chunks": [],
     })
 
-    with patch("nanobot.agent.loop.WebKnowledgeService", return_value=fake_service):
+    with patch("nanobot.agent.loop.WebKnowledgeService", return_value=fake_service) as service_cls:
         loop = AgentLoop(
             bus=MessageBus(),
             provider=_make_provider(),
             workspace=tmp_path,
             knowledge_config=KnowledgeConfig(enabled=True),
+            knowledge_api_key="sk-dashscope-test",
         )
 
     assert loop.context.knowledge_enabled is True
     assert loop.tools.has("kb_search")
     assert len(loop._system_hooks) == 1
+    assert service_cls.call_args.kwargs["api_key"] == "sk-dashscope-test"
 
     result = await loop.tools.execute("kb_search", {"query": "linux"})
 

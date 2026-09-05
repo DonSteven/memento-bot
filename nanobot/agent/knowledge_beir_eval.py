@@ -18,7 +18,7 @@ REPORT_VERSION = 2
 DEFAULT_DATASET = "scifact"
 DEFAULT_DOC_LIMIT = 10
 DEFAULT_EVIDENCE_LIMIT = 5
-DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_EMBEDDING_MODEL = "text-embedding-v4"
 _SUPPORTED_DATASETS = {DEFAULT_DATASET}
 _DEFAULT_DATASET_URLS = {
     "scifact": "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/scifact.zip",
@@ -33,8 +33,11 @@ class EmbeddingBackend(Protocol):
     def dimension(self) -> int:
         """Return the embedding dimensionality."""
 
-    def encode_texts(self, texts: list[str]) -> list[list[float]]:
-        """Encode a batch of texts."""
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Encode document text for storage."""
+
+    async def embed_query(self, text: str) -> list[float]:
+        """Encode one retrieval query."""
 
 
 def _load_beir_runtime() -> tuple[Any, Any, Any]:
@@ -188,6 +191,7 @@ async def _run_knowledge_beir_eval_async(
     service: WebKnowledgeService | None,
     db: WebKnowledgeDatabase | None,
     embedder: EmbeddingBackend | None,
+    api_key: str | None,
 ) -> dict[str, Any]:
     if dataset not in _SUPPORTED_DATASETS:
         raise ValueError(f"Unsupported BEIR dataset: {dataset}")
@@ -205,15 +209,14 @@ async def _run_knowledge_beir_eval_async(
     if service is None:
         config = KnowledgeConfig(
             enabled=True,
-            embedding_model=embedding_model,
+            embedding={"model": embedding_model},
             doc_limit=doc_limit,
             evidence_limit=evidence_limit,
         )
         service = WebKnowledgeService(
             workspace=knowledge_workspace,
-            provider=provider,
-            model=model,
             config=config,
+            api_key=api_key,
             db=db,
             embedder=embedder,
         )
@@ -339,6 +342,7 @@ def run_knowledge_beir_eval(
     service: WebKnowledgeService | None = None,
     db: WebKnowledgeDatabase | None = None,
     embedder: EmbeddingBackend | None = None,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
     return asyncio.run(
         _run_knowledge_beir_eval_async(
@@ -353,6 +357,7 @@ def run_knowledge_beir_eval(
             service=service,
             db=db,
             embedder=embedder,
+            api_key=api_key,
         )
     )
 

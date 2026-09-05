@@ -166,14 +166,37 @@ class MemoryConfig(Base):
     mode: Literal["legacy", "v2"] = "legacy"
 
 
+class KnowledgeEmbeddingConfig(Base):
+    """Embedding API used by the external web knowledge base."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["dashscope"] = "dashscope"
+    model: str = "text-embedding-v4"
+    api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    dimensions: int = Field(default=1024, gt=0)
+
+
+class KnowledgeRerankConfig(Base):
+    """Rerank API used by the external web knowledge base."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    provider: Literal["dashscope"] = "dashscope"
+    model: str = "qwen3-rerank"
+    api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    instruct: str = "Given a web search query, retrieve relevant passages that answer the query."
+
+
 class KnowledgeConfig(Base):
     """External web knowledge configuration."""
 
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    embedding: KnowledgeEmbeddingConfig = Field(default_factory=KnowledgeEmbeddingConfig)
+    rerank: KnowledgeRerankConfig = Field(default_factory=KnowledgeRerankConfig)
     chunk_chars: int = Field(default=800, ge=200)
     chunk_overlap_chars: int = Field(default=150, ge=0)
     doc_limit: int = Field(default=10, ge=1, le=100)

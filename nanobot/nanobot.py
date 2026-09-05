@@ -81,6 +81,7 @@ class Nanobot:
             timezone=defaults.timezone,
             memory_mode=config.memory.mode,
             knowledge_config=config.knowledge,
+            knowledge_api_key=config.providers.dashscope.api_key,
         )
         return cls(loop)
 

@@ -26,7 +26,7 @@ from nanobot.providers.base import LLMProvider, LLMResponse
 class _KeywordEmbedder:
     dimension = 2
 
-    def encode_texts(self, texts: list[str]) -> list[list[float]]:
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         for text in texts:
             lowered = text.lower()
@@ -37,6 +37,9 @@ class _KeywordEmbedder:
             norm = math.sqrt(sum(value * value for value in values)) or 1.0
             vectors.append([value / norm for value in values])
         return vectors
+
+    async def embed_query(self, text: str) -> list[float]:
+        return (await self.embed_documents([text]))[0]
 
 
 class _UnusedProvider(LLMProvider):
@@ -57,7 +60,7 @@ class _UnusedProvider(LLMProvider):
 
 
 class _KeywordReranker:
-    def score_pairs(self, pairs: list[tuple[str, str]]) -> list[float]:
+    async def score_pairs(self, pairs: list[tuple[str, str]]) -> list[float]:
         scores: list[float] = []
         for query, text in pairs:
             query_lower = query.lower()
@@ -197,11 +200,8 @@ def _service(tmp_path: Path) -> WebKnowledgeService:
     knowledge_workspace = tmp_path / "benchmarks" / "beir" / "scifact" / "workspace"
     return WebKnowledgeService(
         workspace=knowledge_workspace,
-        provider=_UnusedProvider(),
-        model="test-model",
         config=KnowledgeConfig(
             enabled=True,
-            embedding_model="sentence-transformers/test-model",
             doc_limit=10,
             evidence_limit=5,
             chunk_chars=200,
@@ -239,7 +239,7 @@ def test_run_knowledge_beir_eval_uses_current_search_limits_and_reports_current_
         dataset="scifact",
         bench_dir=tmp_path / "benchmarks" / "beir" / "scifact",
         service=service,
-        embedding_model="sentence-transformers/test-model",
+        embedding_model="fake-embedding-model",
     )
 
     assert recorded_limits == [(10, 5), (10, 5)]
@@ -281,7 +281,7 @@ def test_run_knowledge_beir_eval_rerun_marks_unchanged_docs(monkeypatch, tmp_pat
         dataset="scifact",
         bench_dir=tmp_path / "benchmarks" / "beir" / "scifact",
         service=service,
-        embedding_model="sentence-transformers/test-model",
+        embedding_model="fake-embedding-model",
     )
     second = run_knowledge_beir_eval(
         workspace=tmp_path,
@@ -290,7 +290,7 @@ def test_run_knowledge_beir_eval_rerun_marks_unchanged_docs(monkeypatch, tmp_pat
         dataset="scifact",
         bench_dir=tmp_path / "benchmarks" / "beir" / "scifact",
         service=service,
-        embedding_model="sentence-transformers/test-model",
+        embedding_model="fake-embedding-model",
     )
 
     assert first["ingestion_summary"]["inserted"] == 22

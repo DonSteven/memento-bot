@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import os
 import time
 from contextlib import AsyncExitStack, nullcontext
@@ -178,6 +177,7 @@ class AgentLoop:
         hooks: list[AgentHook] | None = None,
         memory_mode: str = "legacy",
         knowledge_config: KnowledgeConfig | None = None,
+        knowledge_api_key: str | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig, KnowledgeConfig, WebSearchConfig
 
@@ -237,9 +237,8 @@ class AgentLoop:
         if self.knowledge_config.enabled:
             self.web_knowledge_service = WebKnowledgeService(
                 workspace=workspace,
-                provider=provider,
-                model=self.model,
                 config=self.knowledge_config,
+                api_key=knowledge_api_key,
             )
             self._system_hooks.append(
                 WebKnowledgeHook(

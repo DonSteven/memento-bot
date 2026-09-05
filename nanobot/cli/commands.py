@@ -552,6 +552,7 @@ def serve(
         timezone=runtime_config.agents.defaults.timezone,
         memory_mode=runtime_config.memory.mode,
         knowledge_config=runtime_config.knowledge,
+        knowledge_api_key=runtime_config.providers.dashscope.api_key,
     )
 
     model_name = runtime_config.agents.defaults.model
@@ -642,6 +643,7 @@ def gateway(
         timezone=config.agents.defaults.timezone,
         memory_mode=config.memory.mode,
         knowledge_config=config.knowledge,
+        knowledge_api_key=config.providers.dashscope.api_key,
     )
 
     # Set cron callback (needs agent)
@@ -850,6 +852,7 @@ def agent(
         timezone=config.agents.defaults.timezone,
         memory_mode=config.memory.mode,
         knowledge_config=config.knowledge,
+        knowledge_api_key=config.providers.dashscope.api_key,
     )
 
     # Shared reference for progress callbacks
@@ -1252,9 +1255,9 @@ def knowledge_beir_eval(
         help="Directory to save the BEIR evaluation report",
     ),
     embedding_model: str = typer.Option(
-        "sentence-transformers/all-MiniLM-L6-v2",
+        "text-embedding-v4",
         "--embedding-model",
-        help="SentenceTransformer model used for external knowledge embeddings",
+        help="DashScope model used for external knowledge embeddings",
     ),
     bench_dir: str | None = typer.Option(
         None,
@@ -1295,6 +1298,7 @@ def knowledge_beir_eval(
         dataset=normalized_dataset,
         bench_dir=resolved_bench_dir,
         embedding_model=embedding_model,
+        api_key=runtime_config.providers.dashscope.api_key,
     )
 
     if save_dir:
