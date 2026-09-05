@@ -169,6 +169,7 @@ def _window_chunks(text: str, *, chunk_chars: int, overlap_chars: int) -> list[s
     if not body:
         return []
 
+    effective_overlap = min(overlap_chars, chunk_chars // 2)
     chunks: list[str] = []
     start = 0
     while start < len(body):
@@ -185,7 +186,7 @@ def _window_chunks(text: str, *, chunk_chars: int, overlap_chars: int) -> list[s
             chunks.append(chunk)
         if end >= len(body):
             break
-        start = max(0, end - overlap_chars)
+        start = max(0, end - effective_overlap)
         while start < len(body) and body[start].isspace():
             start += 1
     return chunks
