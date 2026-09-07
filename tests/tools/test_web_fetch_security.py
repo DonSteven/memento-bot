@@ -111,3 +111,72 @@ async def test_web_fetch_blocks_private_redirect_before_returning_image(monkeypa
     data = json.loads(result)
     assert "error" in data
     assert "redirect blocked" in data["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_readability_rejects_binary_body(monkeypatch):
+    import httpx
+
+    async def fake_get(*args, **kwargs):
+        return httpx.Response(200, content=b"%PDF binary data", headers={"content-type": "application/pdf"},
+                              request=httpx.Request("GET", "https://example.com/file.pdf"))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    monkeypatch.setattr("nanobot.security.network.validate_resolved_url", lambda url: (True, ""))
+    result = await WebFetchTool()._fetch_readability("https://example.com/file.pdf", "text", 50000)
+    assert "Unsupported content type" in json.loads(result)["error"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content_type, body, extractor",
+    [
+        (
+            "application/xhtml+xml; charset=utf-8",
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Release</title></head>'
+            '<body><p>Version 2 was released in May 2024.</p></body></html>',
+            "readability",
+        ),
+        (
+            "application/xml",
+            '<?xml version="1.0"?><release>Version 2 was released in May 2024.</release>',
+            "raw",
+        ),
+        (
+            "Application/Atom+XML; charset=UTF-8",
+            '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+            '<entry><title>Version 2 was released in May 2024.</title></entry></feed>',
+            "raw",
+        ),
+    ],
+)
+async def test_web_fetch_extracts_xml_text_when_jina_is_unavailable(
+    monkeypatch, content_type, body, extractor
+):
+    from unittest.mock import AsyncMock
+
+    import httpx
+
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, text=body, headers={"content-type": content_type})
+    )
+    client_class = httpx.AsyncClient
+    monkeypatch.setattr(
+        "nanobot.agent.tools.web.httpx.AsyncClient",
+        lambda **kwargs: client_class(transport=transport, **kwargs),
+    )
+    monkeypatch.setattr("nanobot.security.network.socket.getaddrinfo", _fake_resolve_public)
+    tool = WebFetchTool()
+    tool._fetch_jina = AsyncMock(return_value=None)
+
+    result = json.loads(await tool.execute("https://example.com/release", extractMode="text"))
+
+    assert "error" not in result
+    assert "Version 2 was released in May 2024." in result["text"]
+    assert result["extractor"] == extractor
+    assert result["untrusted"] is True and result["truncated"] is False
+    assert result["finalUrl"] == "https://example.com/release"
+    if extractor == "readability":
+        assert "<html" not in result["text"]
+    tool._fetch_jina.assert_awaited_once()

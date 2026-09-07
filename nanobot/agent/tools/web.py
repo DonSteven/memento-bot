@@ -326,19 +326,21 @@ class WebFetchTool(Tool):
             if not redir_ok:
                 return json.dumps({"error": f"Redirect blocked: {redir_err}", "url": url}, ensure_ascii=False)
 
-            ctype = r.headers.get("content-type", "")
+            ctype = r.headers.get("content-type", "").split(";", 1)[0].strip().lower()
             if ctype.startswith("image/"):
                 return build_image_content_blocks(r.content, ctype, url, f"(Image fetched from: {url})")
 
             if "application/json" in ctype:
                 text, extractor = json.dumps(r.json(), indent=2, ensure_ascii=False), "json"
-            elif "text/html" in ctype or r.text[:256].lower().startswith(("<!doctype", "<html")):
+            elif ctype in {"text/html", "application/xhtml+xml"} or r.text[:256].lower().startswith(("<!doctype", "<html")):
                 doc = Document(r.text)
                 content = self._to_markdown(doc.summary()) if extract_mode == "markdown" else _strip_tags(doc.summary())
                 text = f"# {doc.title()}\n\n{content}" if doc.title() else content
                 extractor = "readability"
-            else:
+            elif ctype.startswith("text/") or ctype == "application/xml" or ctype.endswith("+xml"):
                 text, extractor = r.text, "raw"
+            else:
+                return json.dumps({"error": f"Unsupported content type: {ctype}", "url": url})
 
             truncated = len(text) > max_chars
             if truncated:

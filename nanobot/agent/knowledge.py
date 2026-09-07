@@ -545,7 +545,10 @@ class WebKnowledgeService:
             return None
         if payload.get("error"):
             return None
-        text = str(payload.get("text") or "").strip()
+        text = payload.get("text")
+        if not isinstance(text, str):
+            return None
+        text = text.strip()
         if not text:
             return None
 
@@ -566,6 +569,8 @@ class WebKnowledgeService:
             status = int(status_value) if status_value is not None else 0
         except (TypeError, ValueError):
             status = 0
+        if status >= 400:
+            return None
         is_partial = bool(payload.get("truncated"))
         content_hash = hashlib.sha1(f"{title}\n\n{raw_text}".encode("utf-8")).hexdigest()
         return _FetchedPage(
