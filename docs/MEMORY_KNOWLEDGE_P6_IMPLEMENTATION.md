@@ -42,3 +42,23 @@ propagation, one query embedding, archive and manual-edit flows, online knowledg
 ingestion followed by local reuse, and recovery after interrupted publication.
 Related memory, knowledge, runner and configuration tests exercise the callers.
 These tests validate local contracts, not live retrieval quality or API cost.
+
+## Offline workspace conversion
+
+`scripts/upgrade_memory_knowledge.py` defaults to read-only preflight. It supports
+memory schemas v5–v8, knowledge schemas v3–v4 and complete six-category Markdown
+workspaces. Conversion writes a new offline copy, preserves originals and
+rebuilds derived FTS indexes. Ambiguous facts require an explicit source choice;
+history cannot resurrect deleted memories. Invalid formats and unsafe output
+symlinks are rejected before publication.
+
+Without embeddings, required vector indexes remain `REBUILD_REQUIRED` and the
+copy is not ready for runtime use. An explicit rebuild option can use the target
+embedding backend. See [conversion and switching](MEMORY_KNOWLEDGE_UPGRADE.md)
+for source selection, configuration, stopped writers, data transfer and switching.
+
+`test_upgrade.py` uses temporary copies and mocked embeddings with real sqlite-vec.
+It compares source bytes, canonical fields, event fields, page provenance and
+parent-child links; checks Chinese FTS and fixed-vector recall; and verifies that
+conflicts or failures do not publish a partial destination or change source data.
+Production conversion, paid embeddings and service switching are separate actions.

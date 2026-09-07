@@ -960,6 +960,10 @@ exceed the limit stop with `context_limit` (HTTP 400; SDK `RunResult.stop_reason
 are used when available, otherwise local token estimates; configure the correct model limit.
 Existing history consolidation remains in use and does not cause extra retrieval merely for counting.
 
+Old workspaces must follow [offline conversion and switching](docs/MEMORY_KNOWLEDGE_UPGRADE.md).
+The script defaults to read-only preflight. Conversion writes a fresh copy; real embedding rebuilds
+require a separate explicit option and may incur API costs. No automatic user workspace switch occurs.
+
 <details>
 <summary><b>OpenAI Codex (OAuth)</b></summary>
 

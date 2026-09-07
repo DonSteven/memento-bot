@@ -49,8 +49,8 @@ before opening the write transaction, recheck the P2 revision/file state, then u
 records, bilingual FTS rows, vector rows, events, and revision in one transaction. Unchanged records
 retain their vector rows and are not embedded again.
 
-P6 owns conversion of existing user workspaces. Do not delete an existing database to resolve a
-mismatch; preserve it and use the planned conversion/rebuild command once P6 is available.
+Use [offline conversion and rebuilding](MEMORY_KNOWLEDGE_UPGRADE.md) for existing
+workspaces. Preserve the original database when resolving an index mismatch.
 
 ## Focused validation
 

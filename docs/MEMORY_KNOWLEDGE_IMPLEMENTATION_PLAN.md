@@ -31,7 +31,7 @@ real-model quality and parameter calibration require separate evaluation.
 | P3 | Complete | Incremental semantic memory indexes and bilingual retrieval |
 | P4 | Complete | Evidence selection and structured sufficiency assessment |
 | P5 | Complete | One bounded online supplementation round |
-| P6 | Planned | Request budgeting and offline workspace conversion |
+| P6 | Complete | Request budgeting and offline workspace conversion |
 | P7 | Planned | Real-model evaluation and parameter calibration |
 
 ## Module ownership
