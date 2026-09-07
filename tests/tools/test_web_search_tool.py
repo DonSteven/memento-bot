@@ -160,3 +160,39 @@ async def test_searxng_invalid_url():
     tool = _tool(provider="searxng", base_url="not-a-url")
     result = await tool.execute(query="test")
     assert "Error" in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["brave", "tavily", "searxng", "jina", "duckduckgo"])
+async def test_structured_search_hits(provider, monkeypatch):
+    from nanobot.agent.tools.web import WebSearchHit
+
+    async def response(*args, **kwargs):
+        item = {"title": "<b>Title</b>", "url": "https://example.com/", "content": "Body",
+                "description": "Body"}
+        return _response(json={"web": {"results": [item]}, "results": [item], "data": [item]})
+
+    class FakeDDGS:
+        def __init__(self, **kwargs):
+            pass
+
+        def text(self, *args, **kwargs):
+            return [{"title": "<b>Title</b>", "href": "https://example.com/", "body": "Body"}]
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", response)
+    monkeypatch.setattr(httpx.AsyncClient, "post", response)
+    monkeypatch.setattr("ddgs.DDGS", FakeDDGS)
+    tool = _tool(provider, api_key="mock-key", base_url="https://search.example")
+    assert await tool.search("query") == [WebSearchHit("Title", "https://example.com/", "Body")]
+
+
+@pytest.mark.asyncio
+async def test_structured_search_failure_raises_but_display_reports_error(monkeypatch):
+    async def fail(*args, **kwargs):
+        raise RuntimeError("search unavailable")
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fail)
+    tool = _tool("brave", api_key="mock-key")
+    with pytest.raises(RuntimeError, match="search unavailable"):
+        await tool.search("question")
+    assert await tool.execute("question") == "Error: search unavailable"
