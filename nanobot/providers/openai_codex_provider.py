@@ -53,6 +53,8 @@ class OpenAICodexProvider(LLMProvider):
             "tool_choice": tool_choice or "auto",
             "parallel_tool_calls": True,
         }
+        if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
+            body["tool_choice"] = {"type": "function", "name": tool_choice["function"]["name"]}
         if reasoning_effort:
             body["reasoning"] = {"effort": reasoning_effort}
         if tools:
