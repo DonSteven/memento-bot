@@ -50,6 +50,7 @@ await bot.run("hi", session_key="user-bob")
 | Field | Type | Description |
 |-------|------|-------------|
 | `content` | `str` | The agent's final text response. |
+| `stop_reason` | `str` | Completion status, including `context_limit` when a model call was stopped. |
 | `tools_used` | `list[str]` | Tool names invoked during the run. |
 | `messages` | `list[dict]` | Raw message history (for debugging). |
 
@@ -134,3 +135,23 @@ async def main():
 
 asyncio.run(main())
 ```
+
+## Memory, knowledge, and context limits
+
+`Nanobot.from_config()` uses the same memory and knowledge services as CLI, gateway, and HTTP.
+Successful archives and valid edits to `memory/MEMORY.md` appear in the next prepared context.
+Core memory is always included in full; dynamic memory is selected by query. `kb_search` performs
+one bounded online supplement when local evidence is insufficient.
+
+`RunResult.stop_reason` reports `context_limit` when the necessary request cannot fit the configured
+`agents.defaults.contextWindowTokens` after reserving `maxTokens` for output. `content` explains the
+limit; the blocked model call is not made. Core memory is never truncated. Optional dynamic records
+and knowledge evidence may be removed as complete units. If evidence is reduced, its previous
+sufficiency assessment is invalidated. The check also runs after tools and after `before_iteration`
+hooks, for both streaming and non-streaming calls.
+
+HTTP exposes the same condition as status 400 with `error.type="context_limit"`. Configure the actual
+model context limit; token counts use a provider counter when available, otherwise local estimation,
+which is not a guarantee of exact provider-side accounting, particularly for multimodal requests.
+The hard stop prevents requests already known to exceed the configured limit.
+

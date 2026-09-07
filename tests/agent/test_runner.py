@@ -14,7 +14,9 @@ def _make_loop(tmp_path):
     from nanobot.bus.queue import MessageBus
 
     bus = MessageBus()
+    from nanobot.providers.base import GenerationSettings
     provider = MagicMock()
+    provider.generation = GenerationSettings()
     provider.get_default_model.return_value = "test-model"
 
     with patch("nanobot.agent.loop.ContextBuilder"), \

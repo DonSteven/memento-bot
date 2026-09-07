@@ -13,10 +13,12 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 from loguru import logger
 
 from nanobot.agent.context import ContextBuilder
+from nanobot.agent.context_budget import ContextBudgetError, fit_request
 from nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from nanobot.agent.knowledge import WebKnowledgeHook, WebKnowledgeService
 from nanobot.agent.knowledge_retrieval import KnowledgeRetriever
 from nanobot.agent.memory import MemoryConsolidator
+from nanobot.agent.memory_db import MemoryContext
 from nanobot.agent.memory_service import MemoryService
 from nanobot.agent.memory_sync import MarkdownValidationError, MemoryConflictError
 from nanobot.agent.runner import AgentRunSpec, AgentRunner
@@ -365,6 +367,7 @@ class AgentLoop:
         on_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
         *,
+        memory_context: MemoryContext | None = None,
         channel: str = "cli",
         chat_id: str = "direct",
         message_id: str | None = None,
@@ -388,16 +391,21 @@ class AgentLoop:
         chained_hooks = [*self._system_hooks, *self._extra_hooks]
         hook: AgentHook = _LoopHookChain(loop_hook, chained_hooks) if chained_hooks else loop_hook
 
-        result = await self.runner.run(AgentRunSpec(
-            initial_messages=initial_messages,
-            tools=self.tools,
-            model=self.model,
-            max_iterations=self.max_iterations,
-            hook=hook,
-            error_message="Sorry, I encountered an error calling the AI model.",
-            concurrent_tools=True,
-        ))
+        result = await self.runner.run(
+            AgentRunSpec(
+                initial_messages=initial_messages,
+                tools=self.tools,
+                model=self.model,
+                max_iterations=self.max_iterations,
+                hook=hook,
+                error_message="Sorry, I encountered an error calling the AI model.",
+                concurrent_tools=True,
+                context_window_tokens=self.context_window_tokens,
+                memory_context=memory_context,
+            )
+        )
         self._last_usage = result.usage
+        self._last_stop_reason = result.stop_reason
         if result.stop_reason == "max_iterations":
             logger.warning("Max iterations ({}) reached", self.max_iterations)
         elif result.stop_reason == "error":
@@ -523,7 +531,27 @@ class AgentLoop:
         self._running = False
         logger.info("Agent loop stopping")
 
-    async def _process_message(
+    async def _process_message(self, msg: InboundMessage, **kwargs) -> OutboundMessage | None:
+        try:
+            return await self._process_message_impl(msg, **kwargs)
+        except ContextBudgetError as exc:
+            channel, chat_id = msg.channel, msg.chat_id
+            if channel == "system":
+                channel, chat_id = chat_id.split(":", 1) if ":" in chat_id else ("cli", chat_id)
+            return OutboundMessage(channel=channel, chat_id=chat_id, content=str(exc),
+                                   metadata={"stop_reason": "context_limit"})
+
+    def _fit_turn_memory(self, memory_context, msg, channel, chat_id):
+        messages = self.context.build_messages(
+            history=[], current_message=msg.content, media=msg.media or None,
+            channel=channel, chat_id=chat_id, memory_context=memory_context,
+            current_role="assistant" if msg.channel == "system" and msg.sender_id == "subagent" else "user",
+        )
+        return fit_request(self.provider, self.model, messages, self.tools.get_definitions(),
+                           self.context_window_tokens, self.provider.generation.max_tokens,
+                           memory_context)
+
+    async def _process_message_impl(
         self,
         msg: InboundMessage,
         session_key: str | None = None,
@@ -540,6 +568,7 @@ class AgentLoop:
             key = f"{channel}:{chat_id}"
             session = self.sessions.get_or_create(key)
             memory_context = await self.memory_service.prepare_context(msg.content)
+            memory_context = self._fit_turn_memory(memory_context, msg, channel, chat_id)
             memory_context = await self.memory_consolidator.maybe_consolidate_by_tokens(
                 session, memory_context, query=msg.content, current_message=msg.content,
             )
@@ -553,16 +582,27 @@ class AgentLoop:
                 memory_context=memory_context,
             )
             final_content, _, all_msgs = await self._run_agent_loop(
-                messages, channel=channel, chat_id=chat_id,
+                messages,
+                memory_context=memory_context,
+                channel=channel,
+                chat_id=chat_id,
                 message_id=msg.metadata.get("message_id"),
             )
             self._save_turn(session, all_msgs, 1 + len(history))
             self.sessions.save(session)
-            self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(
-                session, memory_context, query=msg.content,
-            ))
-            return OutboundMessage(channel=channel, chat_id=chat_id,
-                                  content=final_content or "Background task completed.")
+            self._schedule_background(
+                self.memory_consolidator.maybe_consolidate_by_tokens(
+                    session,
+                    memory_context,
+                    query=msg.content,
+                )
+            )
+            return OutboundMessage(
+                channel=channel,
+                chat_id=chat_id,
+                content=final_content or "Background task completed.",
+                metadata={"stop_reason": getattr(self, "_last_stop_reason", "completed")},
+            )
 
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
@@ -577,6 +617,7 @@ class AgentLoop:
             return result
 
         memory_context = await self.memory_service.prepare_context(msg.content)
+        memory_context = self._fit_turn_memory(memory_context, msg, msg.channel, msg.chat_id)
         memory_context = await self.memory_consolidator.maybe_consolidate_by_tokens(
             session, memory_context, query=msg.content, current_message=msg.content,
         )
@@ -605,6 +646,7 @@ class AgentLoop:
 
         final_content, _, all_msgs = await self._run_agent_loop(
             initial_messages,
+            memory_context=memory_context,
             on_progress=on_progress or _bus_progress,
             on_stream=on_stream,
             on_stream_end=on_stream_end,
@@ -628,6 +670,7 @@ class AgentLoop:
         logger.info("Response to {}:{}: {}", msg.channel, msg.sender_id, preview)
 
         meta = dict(msg.metadata or {})
+        meta["stop_reason"] = getattr(self, "_last_stop_reason", "completed")
         if on_stream is not None:
             meta["_streamed"] = True
         return OutboundMessage(

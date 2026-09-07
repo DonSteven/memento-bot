@@ -14,7 +14,10 @@ def _make_loop(tmp_path, *, estimated_tokens: int, context_window_tokens: int) -
     provider = MagicMock()
     provider.get_default_model.return_value = "test-model"
     provider.generation = GenerationSettings(max_tokens=0)
-    provider.estimate_prompt_tokens.return_value = (estimated_tokens, "test-counter")
+    # Necessary content fits; only history should trigger the compression policy here.
+    provider.estimate_prompt_tokens.side_effect = lambda messages, *_: (
+        max(estimated_tokens, 1) if len(messages) > 3 else 50, "test-counter"
+    )
     _response = LLMResponse(content="ok", tool_calls=[])
     provider.chat_with_retry = AsyncMock(return_value=_response)
     provider.chat_stream_with_retry = AsyncMock(return_value=_response)

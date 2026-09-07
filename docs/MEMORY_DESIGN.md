@@ -30,3 +30,8 @@ See [the runtime contract](MEMORY_P1_IMPLEMENTATION.md) and
 [the implementation roadmap](MEMORY_KNOWLEDGE_IMPLEMENTATION_PLAN.md).
 This document is an edited English treatment of the memory research plan,
 updated to the current implementation contracts.
+
+The final model request is checked after hooks and tool results. Optional dynamic
+records and knowledge evidence are removed whole if needed; core facts remain
+complete. An unavoidable overflow ends with `context_limit`. See
+[entry integration and budgeting](MEMORY_KNOWLEDGE_P6_IMPLEMENTATION.md).

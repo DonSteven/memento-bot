@@ -15,6 +15,7 @@ from aiohttp import web
 from loguru import logger
 
 from nanobot.agent.memory_sync import MarkdownValidationError, MemoryConflictError
+from nanobot.bus.events import OutboundMessage
 
 API_SESSION_KEY = "api:default"
 API_CHAT_ID = "default"
@@ -130,7 +131,8 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
                         ),
                         timeout=timeout_s,
                     )
-                    response_text = _response_text(retry_response)
+                    response = retry_response
+                    response_text = _response_text(response)
                     if not response_text or not response_text.strip():
                         logger.warning(
                             "Empty response after retry for session {}, using fallback",
@@ -150,6 +152,8 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
         logger.exception("Unexpected API lock error for session {}", session_key)
         return _error_json(500, "Internal server error", err_type="server_error")
 
+    if isinstance(response, OutboundMessage) and response.metadata.get("stop_reason") == "context_limit":
+        return _error_json(400, response_text, err_type="context_limit")
     return web.json_response(_chat_completion_response(response_text, model_name))
 
 

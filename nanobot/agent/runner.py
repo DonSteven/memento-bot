@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
+from nanobot.agent.context_budget import ContextBudgetError, fit_request
 from nanobot.agent.hook import AgentHook, AgentHookContext
+from nanobot.agent.memory_db import MemoryContext
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.providers.base import LLMProvider, ToolCallRequest
 from nanobot.utils.helpers import build_assistant_message
@@ -34,6 +37,8 @@ class AgentRunSpec:
     max_iterations_message: str | None = None
     concurrent_tools: bool = False
     fail_on_tool_error: bool = False
+    context_window_tokens: int | None = None
+    memory_context: MemoryContext | None = None
 
 
 @dataclass(slots=True)
@@ -57,7 +62,8 @@ class AgentRunner:
 
     async def run(self, spec: AgentRunSpec) -> AgentRunResult:
         hook = spec.hook or AgentHook()
-        messages = list(spec.initial_messages)
+        messages = deepcopy(spec.initial_messages)
+        memory_context = spec.memory_context
         final_content: str | None = None
         tools_used: list[str] = []
         usage = {"prompt_tokens": 0, "completion_tokens": 0}
@@ -79,6 +85,26 @@ class AgentRunner:
                 kwargs["max_tokens"] = spec.max_tokens
             if spec.reasoning_effort is not None:
                 kwargs["reasoning_effort"] = spec.reasoning_effort
+
+            if spec.context_window_tokens is not None:
+                try:
+                    memory_context = fit_request(
+                        self.provider, spec.model, messages, kwargs["tools"],
+                        spec.context_window_tokens,
+                        spec.max_tokens if spec.max_tokens is not None else self.provider.generation.max_tokens,
+                        memory_context,
+                    )
+                except ContextBudgetError as exc:
+                    final_content = error = str(exc)
+                    stop_reason = "context_limit"
+                    context.final_content = final_content
+                    context.error = error
+                    context.stop_reason = stop_reason
+                    if hook.wants_streaming():
+                        await hook.on_stream(context, final_content)
+                        await hook.on_stream_end(context, resuming=False)
+                    await hook.after_iteration(context)
+                    break
 
             if hook.wants_streaming():
                 async def _stream(delta: str) -> None:

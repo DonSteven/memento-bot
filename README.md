@@ -953,6 +953,13 @@ misses do not trigger this workflow. Online supplementation sends the query to t
 fetches external URLs, and sends extracted text to the configured embedding/reranking and assessment
 services, which may incur their normal API charges. See [P5 behavior and validation](docs/KNOWLEDGE_P5_IMPLEMENTATION.md).
 
+The agent checks the actual prepared request before each chat model call, including after tools
+and hooks. It reserves `agents.defaults.maxTokens` within `contextWindowTokens`, then removes whole
+dynamic records or knowledge evidence if needed. Core memory stays complete. Requests that still
+exceed the limit stop with `context_limit` (HTTP 400; SDK `RunResult.stop_reason`). Provider counters
+are used when available, otherwise local token estimates; configure the correct model limit.
+Existing history consolidation remains in use and does not cause extra retrieval merely for counting.
+
 <details>
 <summary><b>OpenAI Codex (OAuth)</b></summary>
 

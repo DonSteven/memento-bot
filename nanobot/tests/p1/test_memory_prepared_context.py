@@ -92,7 +92,10 @@ async def test_loop_reuses_prepared_memory_and_refreshes_after_commit(
     monkeypatch.setattr(service.pipeline, "extract_snapshot", extraction)
     if archive:
         loop.provider.estimate_prompt_tokens.side_effect = [
+            (50, "test"),  # P6 necessary-content preflight
             (300, "test"),
+            (50, "test"),
+            (50, "test"),
             (50, "test"),
             (50, "test"),
         ]
@@ -110,7 +113,7 @@ async def test_loop_reuses_prepared_memory_and_refreshes_after_commit(
     assert prepare.await_count == (2 if archive else 1)
     assert all(call.args == ("Nanobot",) for call in prepare.await_args_list)
     # Each estimate, the actual prompt, and the background check share the prepared object.
-    assert all(context is contexts[-1] for context in contexts[1 if archive else 0 :])
+    assert all(context is contexts[-1] for context in contexts[2 if archive else 0 :])
     assert contexts[-1].retrieved_items[0].text == (
         "Nanobot new fact" if archive else "Nanobot old fact"
     )

@@ -18,6 +18,7 @@ class RunResult:
     content: str
     tools_used: list[str]
     messages: list[dict[str, Any]]
+    stop_reason: str = "completed"
 
 
 class Nanobot:
@@ -112,7 +113,8 @@ class Nanobot:
             self._loop._extra_hooks = prev
 
         content = (response.content if response else None) or ""
-        return RunResult(content=content, tools_used=[], messages=[])
+        return RunResult(content=content, tools_used=[], messages=[],
+                         stop_reason=(response.metadata or {}).get("stop_reason", "completed") if response else "completed")
 
 
 def _make_provider(config: Any) -> Any:
