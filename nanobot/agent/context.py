@@ -114,11 +114,11 @@ IMPORTANT: To send files (images, documents, audio, video) to the user, you MUST
         if not self.knowledge_enabled:
             return ""
         return (
-            "- For non-current external factual questions, use 'kb_search' before calling "
-            "'web_search' or 'web_fetch'. 'kb_search' returns traceable parent/child evidence and "
-            "a coverage assessment from the local web knowledge base. If it reports insufficient "
-            "evidence, or the user asks for the latest/current/today information, verify with "
-            "live web tools."
+            "- For external factual questions, use 'kb_search' when knowledge evidence is needed. "
+            "It checks local evidence, then automatically performs at most one online search and "
+            "fetches up to three URLs if evidence is insufficient. It returns traceable parent/child "
+            "evidence, remaining gaps, and errors. Do not treat insufficient evidence as a complete "
+            "answer. For explicitly latest/current information, verify freshness with live web tools."
         )
 
     @staticmethod

@@ -16,4 +16,4 @@ def test_context_builder_with_web_knowledge_enabled_adds_kb_search_guidance(tmp_
     messages = builder.build_messages(history=[], current_message="What changed in Linux 6.9?")
 
     system_prompt = messages[0]["content"]
-    assert "use 'kb_search' before calling 'web_search' or 'web_fetch'" in system_prompt
+    assert "automatically performs at most one online search" in system_prompt

@@ -131,6 +131,10 @@ async def test_agent_loop_registers_kb_search_when_knowledge_enabled(tmp_path: P
     fake_retriever.retrieve.assert_awaited_once()
     payload = json.loads(result)
     assert payload == {
+        "online_attempted": False,
+        "fetched_urls": [],
+        "ingested_urls": [],
+        "online_errors": [],
         "query": "linux",
         "status": "sufficient",
         "sufficient": True,

@@ -1,4 +1,4 @@
-"""Local external web knowledge search tool.
+"""External knowledge retrieval tool.
 这是很薄的一层工具适配器"""
 
 from __future__ import annotations
@@ -11,14 +11,13 @@ from nanobot.agent.tools.base import Tool
 
 
 class KnowledgeSearchTool(Tool):
-    """Retrieve and assess evidence from the local external knowledge base."""
+    """Retrieve and assess local and online external evidence."""
 
     name = "kb_search"
     description = (
-        "Search the local external web knowledge base built from prior successful web_fetch results. "
-        "Returns traceable parent/child evidence, relevance scores, and an answer-coverage assessment. "
-        "An assessment_error means sufficiency could not be determined. "
-        "Use this before web_search/web_fetch for non-current factual questions."
+        "Retrieve external knowledge with traceable parent/child evidence and coverage assessment. "
+        "When local evidence is insufficient, automatically search once, fetch up to three distinct "
+        "URLs, persist their text, and reassess. Reports remaining gaps and execution errors."
     )
     parameters = {
         "type": "object",
@@ -26,7 +25,7 @@ class KnowledgeSearchTool(Tool):
             "query": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Question or retrieval query to look up locally.",
+                "description": "Question or retrieval query.",
             },
             "docLimit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
             "evidenceLimit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 5},

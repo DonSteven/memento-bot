@@ -921,7 +921,8 @@ when enabled, its reranker also uses that key:
     },
     "rerankRelevanceThreshold": 0.2,
     "evidenceTokenBudget": 4000,
-    "assessmentTimeoutSeconds": 30
+    "assessmentTimeoutSeconds": 30,
+    "onlineMaxUrls": 3
   }
 }
 ```
@@ -938,9 +939,19 @@ When external knowledge is enabled, reranking is required. `kb_search` first run
 retrieval and `qwen3-rerank`, removes evidence below `rerankRelevanceThreshold`, and applies the
 separate evidence token budget. Document, child, and per-parent limits count only selected evidence;
 low-score or over-budget candidates do not consume slots. The configured main chat model then assesses whether the evidence
-fully covers the question. Results distinguish `sufficient`, `insufficient`, `retrieval_error`, and
-`assessment_error`; rerank scores are ranking signals rather than probabilities. This local P4 path
-does not automatically search or fetch the web.
+fully covers the question. If local evidence is insufficient, `kb_search` searches once using the same
+query and the existing `tools.web.search` provider/proxy settings, fetches up to `onlineMaxUrls`
+distinct validated URLs (1–3, default 3), waits for successful text ingestion, and reruns local
+retrieval and assessment. Search snippets are never evidence. There is no second search round.
+Local retrieval or assessment errors return immediately without online supplementation.
+
+Results distinguish `sufficient`, `insufficient`, `retrieval_error`, `assessment_error`, and
+`online_error`; rerank scores are ranking signals rather than probabilities. `online_attempted`,
+`fetched_urls`, `ingested_urls`, and `online_errors` describe the actual supplement. Partial success
+preserves usable evidence and reports failures; no results remains insufficient. Personal memory
+misses do not trigger this workflow. Online supplementation sends the query to the search provider,
+fetches external URLs, and sends extracted text to the configured embedding/reranking and assessment
+services, which may incur their normal API charges. See [P5 behavior and validation](docs/KNOWLEDGE_P5_IMPLEMENTATION.md).
 
 <details>
 <summary><b>OpenAI Codex (OAuth)</b></summary>

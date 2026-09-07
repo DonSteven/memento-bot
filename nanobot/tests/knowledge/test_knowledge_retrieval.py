@@ -98,6 +98,7 @@ def _retriever(local: LocalKnowledgeResult, provider: _AssessmentProvider, **con
     service.search_local.return_value = local
     resolved = KnowledgeConfig(enabled=True, **config)
     return KnowledgeRetriever(
+        search=SimpleNamespace(search=AsyncMock(return_value=[])), fetch=WebFetchTool(),
         service=service,
         provider=provider,
         model="test-model",
@@ -254,6 +255,7 @@ async def test_local_retrieval_failure_has_distinct_error_status() -> None:
     service = AsyncMock()
     service.search_local.side_effect = RuntimeError("reranker unavailable")
     retriever = KnowledgeRetriever(
+        search=SimpleNamespace(search=AsyncMock(return_value=[])), fetch=WebFetchTool(),
         service=service,
         provider=provider,
         model="test-model",
@@ -311,6 +313,7 @@ async def test_low_score_children_do_not_exclude_other_relevant_parents(tmp_path
     )
     provider = _AssessmentProvider({"sufficient": True, "missing_points": [], "reason": "A and B"})
     retriever = KnowledgeRetriever(
+        search=SimpleNamespace(search=AsyncMock(return_value=[])), fetch=WebFetchTool(),
         service=service, provider=provider, model="test-model", config=service.config
     )
 
@@ -332,6 +335,7 @@ async def test_over_budget_parent_does_not_consume_document_or_evidence_slot(tmp
     )
     provider = _AssessmentProvider({"sufficient": True, "missing_points": [], "reason": "covered"})
     retriever = KnowledgeRetriever(
+        search=SimpleNamespace(search=AsyncMock(return_value=[])), fetch=WebFetchTool(),
         service=service, provider=provider, model="test-model", config=service.config
     )
 
@@ -352,6 +356,7 @@ async def test_over_budget_child_does_not_consume_per_parent_slot(tmp_path) -> N
     )
     provider = _AssessmentProvider({"sufficient": True, "missing_points": [], "reason": "covered"})
     retriever = KnowledgeRetriever(
+        search=SimpleNamespace(search=AsyncMock(return_value=[])), fetch=WebFetchTool(),
         service=service, provider=provider, model="test-model", config=service.config
     )
 
@@ -371,6 +376,7 @@ async def test_output_limits_apply_to_selected_evidence(tmp_path) -> None:
     )
     provider = _AssessmentProvider({"sufficient": True, "missing_points": [], "reason": "covered"})
     retriever = KnowledgeRetriever(
+        search=SimpleNamespace(search=AsyncMock(return_value=[])), fetch=WebFetchTool(),
         service=service, provider=provider, model="test-model", config=service.config
     )
 
@@ -382,8 +388,8 @@ async def test_output_limits_apply_to_selected_evidence(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("sufficient", [True, False])
-async def test_kb_search_real_local_pipeline_never_searches_or_fetches(
+@pytest.mark.parametrize("sufficient", [True])
+async def test_kb_search_sufficient_local_pipeline_never_searches_or_fetches(
     tmp_path, monkeypatch, sufficient
 ) -> None:
     service = _indexed_service(tmp_path, [("Answer", [("Answer", 0.9)])])
@@ -393,6 +399,7 @@ async def test_kb_search_real_local_pipeline_never_searches_or_fetches(
         "reason": "covered" if sufficient else "Incomplete coverage",
     })
     retriever = KnowledgeRetriever(
+        search=SimpleNamespace(search=AsyncMock(return_value=[])), fetch=WebFetchTool(),
         service=service, provider=provider, model="test-model", config=service.config
     )
     search = AsyncMock(side_effect=AssertionError("Unexpected web search"))

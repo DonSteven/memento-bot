@@ -220,6 +220,7 @@ class KnowledgeConfig(Base):
     rerank_relevance_threshold: float = Field(default=0.2)
     evidence_token_budget: int = Field(default=4000, ge=1)
     assessment_timeout_seconds: float = Field(default=30.0, gt=0)
+    online_max_urls: int = Field(default=3, ge=1, le=3)
 
 
 class Config(BaseSettings): # 继承自 pydantic.BaseSettings

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from nanobot.agent.knowledge import (
@@ -12,7 +12,9 @@ from nanobot.agent.knowledge import (
     LocalKnowledgeResult,
     ParentEvidence,
     WebKnowledgeService,
+    _normalize_url,
 )
+from nanobot.agent.tools.web import WebFetchTool, WebSearchTool, _validate_url_safe
 from nanobot.config.schema import KnowledgeConfig
 from nanobot.providers.base import LLMProvider
 from nanobot.utils.helpers import estimate_message_tokens
@@ -50,15 +52,24 @@ class EvidenceAssessment:
 @dataclass(frozen=True, slots=True)
 class KnowledgeResult:
     query: str
-    status: Literal["sufficient", "insufficient", "retrieval_error", "assessment_error"]
+    status: Literal["sufficient", "insufficient", "retrieval_error", "assessment_error", "online_error"]
     sufficient: bool | None
     reason: str
     missing_points: tuple[str, ...]
     parents: tuple[ParentEvidence, ...]
     children: tuple[ChildEvidence, ...]
 
+    online_attempted: bool = False
+    fetched_urls: tuple[str, ...] = ()
+    ingested_urls: tuple[str, ...] = ()
+    online_errors: tuple[str, ...] = ()
+
     def to_dict(self) -> dict[str, Any]:
         return {
+            "online_attempted": self.online_attempted,
+            "fetched_urls": list(self.fetched_urls),
+            "ingested_urls": list(self.ingested_urls),
+            "online_errors": list(self.online_errors),
             "query": self.query,
             "status": self.status,
             "sufficient": self.sufficient,
@@ -74,7 +85,7 @@ class EvidenceAssessmentError(RuntimeError):
 
 
 class KnowledgeRetriever:
-    """Run local retrieval, relevance filtering, and answer-coverage assessment."""
+    """Assess local evidence and perform at most one online supplement."""
 
     def __init__(
         self,
@@ -83,13 +94,97 @@ class KnowledgeRetriever:
         provider: LLMProvider,
         model: str,
         config: KnowledgeConfig,
+        search: WebSearchTool,
+        fetch: WebFetchTool,
     ) -> None:
         self.service = service
         self.provider = provider
         self.model = model
         self.config = config
+        self.search = search
+        self.fetch = fetch
 
     async def retrieve(
+        self,
+        query: str,
+        *,
+        doc_limit: int | None = None,
+        evidence_limit: int | None = None,
+    ) -> KnowledgeResult:
+        query = " ".join(query.split())
+        if not query:
+            raise ValueError("query must contain non-whitespace text")
+        limits = {"doc_limit": doc_limit, "evidence_limit": evidence_limit}
+        local = await self._retrieve_local(query, **limits)
+        if local.status != "insufficient":
+            return local
+
+        errors: list[str] = []
+        fetched: list[str] = []
+        ingested: list[str] = []
+        try:
+            hits = await self.search.search(query)
+        except Exception as exc:
+            return replace(local, status="online_error", online_attempted=True,
+                           online_errors=(f"Search failed: {exc}",))
+
+        seen: set[str] = set()
+        for hit in hits:
+            try:
+                url = _normalize_url(hit.url)
+                if url in seen:
+                    continue
+                seen.add(url)
+                valid, error = await asyncio.to_thread(_validate_url_safe, url)
+            except Exception as exc:
+                errors.append(f"URL rejected ({hit.url}): {exc}")
+                continue
+            if not valid:
+                errors.append(f"URL rejected ({hit.url}): {error}")
+                continue
+            fetched.append(url)
+            try:
+                # Direct invocation does not emit a web_fetch tool call to the background hook.
+                payload = await self.fetch.execute(url=url)
+                page = self.service.parse_web_fetch_result({"url": url}, payload)
+                if page is None:
+                    detail = "No usable text body"
+                    if isinstance(payload, str):
+                        try:
+                            parsed = json.loads(payload)
+                            if isinstance(parsed, dict) and parsed.get("error"):
+                                detail = str(parsed["error"])
+                        except ValueError:
+                            pass
+                    errors.append(f"Fetch failed ({url}): {detail}")
+                else:
+                    try:
+                        saved = await self.service.ingest_page(page)
+                        if saved is None:
+                            errors.append(f"Ingestion produced no content ({url})")
+                        else:
+                            ingested.append(url)
+                    except Exception as exc:
+                        errors.append(f"Ingestion failed ({url}): {exc}")
+            except Exception as exc:
+                errors.append(f"Fetch failed ({url}): {exc}")
+            if len(fetched) >= self.config.online_max_urls:
+                break
+
+        result = local
+        if ingested:
+            result = await self._retrieve_local(query, **limits)
+            if result.status == "retrieval_error":
+                result = replace(result, parents=local.parents, children=local.children,
+                                 missing_points=local.missing_points)
+        elif errors:
+            result = replace(local, status="online_error")
+        else:
+            result = replace(local, reason=local.reason + " Online search returned no usable URLs.")
+        return replace(result, online_attempted=True, fetched_urls=tuple(fetched),
+                       ingested_urls=tuple(ingested), online_errors=tuple(errors))
+
+    async def _retrieve_local(
         self,
         query: str,
         *,

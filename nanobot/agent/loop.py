@@ -245,6 +245,8 @@ class AgentLoop:
         self._concurrency_gate: asyncio.Semaphore | None = (
             asyncio.Semaphore(_max) if _max > 0 else None
         )
+        self.web_search_tool = WebSearchTool(config=self.web_search_config, proxy=self.web_proxy)
+        self.web_fetch_tool = WebFetchTool(proxy=self.web_proxy)
         self.web_knowledge_service: WebKnowledgeService | None = None
         self.knowledge_retriever: KnowledgeRetriever | None = None
         if self.knowledge_config.enabled:
@@ -255,6 +257,8 @@ class AgentLoop:
             )
             self.knowledge_retriever = KnowledgeRetriever(
                 service=self.web_knowledge_service,
+                search=self.web_search_tool,
+                fetch=self.web_fetch_tool,
                 provider=self.provider,
                 model=self.model,
                 config=self.knowledge_config,
@@ -297,8 +301,8 @@ class AgentLoop:
             )
         if self.knowledge_retriever is not None:
             self.tools.register(KnowledgeSearchTool(self.knowledge_retriever))
-        self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
-        self.tools.register(WebFetchTool(proxy=self.web_proxy))
+        self.tools.register(self.web_search_tool)
+        self.tools.register(self.web_fetch_tool)
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:

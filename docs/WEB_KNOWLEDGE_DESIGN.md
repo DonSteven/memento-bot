@@ -1,4 +1,4 @@
-# Local Web Knowledge Design
+# Web Knowledge Design
 
 ## Purpose and scope
 
@@ -8,7 +8,7 @@ knowledge have separate databases and responsibilities: personal memory records
 facts about the user, while the knowledge store contains untrusted source text.
 
 This is an edited English version of the external-knowledge research plan,
-scoped to the webpage ingestion and local retrieval stage. The implementation
+updated through local evidence assessment and bounded online supplementation. The implementation
 uses the existing agent Hook and Tool interfaces and remains disabled by
 default through `knowledge.enabled`.
 
@@ -18,6 +18,7 @@ default through `knowledge.enabled`.
 | --- | --- |
 | `nanobot/agent/knowledge_db.py` | SQLite schema, metadata, FTS/vector indexes and page replacement |
 | `nanobot/agent/knowledge.py` | Fetch-result parsing, text preparation, embedding and retrieval |
+| `nanobot/agent/knowledge_retrieval.py` | Select evidence, assess coverage and orchestrate one online supplement |
 | `nanobot/agent/tools/knowledge.py` | Validate tool arguments and expose `kb_search` |
 | `nanobot/agent/loop.py` | Construct the service, register its tool and schedule ingestion hooks |
 | `nanobot/config/schema.py` | Define knowledge settings |
@@ -57,15 +58,15 @@ dimensions and index contents must agree with the configured retrieval path.
 ## Local retrieval
 
 The retrieval path searches child chunks with FTS and vector similarity, then
-combines the rankings with reciprocal rank fusion. A cross-encoder reranks a
-bounded child pool. Parent scores use their best child plus a small coverage
+combines the rankings with reciprocal rank fusion. The configured DashScope reranker scores a bounded child pool. Parent scores use their best child plus a small coverage
 bonus. Evidence selection limits both the total number of chunks and the number
 from any one parent, while retaining the links back to source pages.
 
 Each evidence item carries source identifiers, text, URL and title. Retrieval
-scores describe ranking signals, not calibrated probabilities. The tool also
-returns a sufficiency signal so the agent can decide whether to consult live
-web sources. At this stage, online follow-up remains an agent tool decision.
+scores describe ranking signals, not calibrated probabilities. The retriever asks the main model to assess coverage. Insufficient local
+evidence triggers one search with the original query and at most three fetches.
+Successful ingestion completes before local retrieval and assessment repeat.
+See [online supplementation](KNOWLEDGE_P5_IMPLEMENTATION.md).
 
 Core prompt guidance asks the agent to consult local knowledge first for
 non-current factual questions. Requests for current information still require
