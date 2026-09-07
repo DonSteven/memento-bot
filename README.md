@@ -918,7 +918,10 @@ when enabled, its reranker also uses that key:
       "model": "qwen3-rerank",
       "apiBase": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "instruct": "Given a web search query, retrieve relevant passages that answer the query."
-    }
+    },
+    "rerankRelevanceThreshold": 0.2,
+    "evidenceTokenBudget": 4000,
+    "assessmentTimeoutSeconds": 30
   }
 }
 ```
@@ -930,6 +933,14 @@ the configured host, so the configured `apiBase` can share the chat/embedding ho
 SQLite vector dependency with `uv sync --extra web_knowledge` before running nanobot. Changing an
 embedding provider, model, dimension, or the FTS tokenizer version requires rebuilding the affected
 derived indexes; nanobot reports an explicit metadata mismatch instead of mixing incompatible data.
+
+When external knowledge is enabled, reranking is required. `kb_search` first runs local FTS/vector
+retrieval and `qwen3-rerank`, removes evidence below `rerankRelevanceThreshold`, and applies the
+separate evidence token budget. Document, child, and per-parent limits count only selected evidence;
+low-score or over-budget candidates do not consume slots. The configured main chat model then assesses whether the evidence
+fully covers the question. Results distinguish `sufficient`, `insufficient`, `retrieval_error`, and
+`assessment_error`; rerank scores are ranking signals rather than probabilities. This local P4 path
+does not automatically search or fetch the web.
 
 <details>
 <summary><b>OpenAI Codex (OAuth)</b></summary>

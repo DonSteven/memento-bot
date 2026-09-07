@@ -611,8 +611,10 @@ class WebKnowledgeDatabase:
                 select pc.child_id, pc.parent_id, pc.page_id, pc.child_index, pc.text,
                        pp.parent_index, pp.text as parent_text,
                        wp.title, wp.final_url, wp.is_partial,
-                       vec_hits.distance as rank_score
+                       vec_hits.distance as rank_score,
+                       1.0 - vec_distance_cosine(v.embedding, ?) as vector_similarity
                 from vec_hits
+                join parent_child_vec v on v.rowid = vec_hits.child_id
                 join parent_children pc on pc.child_id = vec_hits.child_id
                 join page_parents pp on pp.parent_id = pc.parent_id
                 join web_pages wp on wp.page_id = pc.page_id
@@ -620,7 +622,13 @@ class WebKnowledgeDatabase:
                 order by vec_hits.distance asc, pc.child_id asc
                 limit ?
             """
-            params: list[Any] = [_vector_json(query_vector), max(limit * 5, 20), *parent_params, limit]
+            params: list[Any] = [
+                _vector_json(query_vector),
+                max(limit * 5, 20),
+                _vector_json(query_vector),
+                *parent_params,
+                limit,
+            ]
             with self.connect() as conn:
                 rows = conn.execute(sql, params).fetchall()
             return [dict(row) for row in rows]
@@ -641,6 +649,7 @@ class WebKnowledgeDatabase:
         hits = []
         for row in rows:
             embedding = json.loads(str(row["embedding_json"]))
+            similarity = _cosine_similarity(query_vector, [float(value) for value in embedding])
             hits.append(
                 {
                     "child_id": int(row["child_id"]),
@@ -653,7 +662,8 @@ class WebKnowledgeDatabase:
                     "title": str(row["title"]),
                     "final_url": str(row["final_url"]),
                     "is_partial": int(row["is_partial"]),
-                    "rank_score": 1.0 - _cosine_similarity(query_vector, [float(value) for value in embedding]),
+                    "rank_score": 1.0 - similarity,
+                    "vector_similarity": similarity,
                 }
             )
         hits.sort(key=lambda item: (float(item["rank_score"]), int(item["child_id"])))

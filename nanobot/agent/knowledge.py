@@ -46,6 +46,73 @@ class _FetchedPage:
     content_hash: str
 
 
+@dataclass(frozen=True, slots=True)
+class ParentEvidence:
+    parent_id: int
+    page_id: int
+    title: str
+    url: str
+    text: str
+    partial: bool
+    sources: tuple[str, ...]
+    rerank_score: float
+    rerank_rank: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "parent_id": self.parent_id,
+            "page_id": self.page_id,
+            "title": self.title,
+            "url": self.url,
+            "text": self.text,
+            "partial": self.partial,
+            "sources": list(self.sources),
+            "rerank_score": self.rerank_score,
+            "rerank_rank": self.rerank_rank,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ChildEvidence:
+    child_id: int
+    parent_id: int
+    page_id: int
+    title: str
+    url: str
+    text: str
+    partial: bool
+    sources: tuple[str, ...]
+    rerank_score: float
+    rerank_rank: int
+    fts_rank: int | None
+    vector_rank: int | None
+    vector_similarity: float | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "child_id": self.child_id,
+            "parent_id": self.parent_id,
+            "page_id": self.page_id,
+            "title": self.title,
+            "url": self.url,
+            "text": self.text,
+            "partial": self.partial,
+            "sources": list(self.sources),
+            "rerank_score": self.rerank_score,
+            "rerank_rank": self.rerank_rank,
+            "fts_rank": self.fts_rank,
+            "vector_rank": self.vector_rank,
+            "vector_similarity": self.vector_similarity,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class LocalKnowledgeResult:
+    query: str
+    parents: tuple[ParentEvidence, ...]
+    children: tuple[ChildEvidence, ...]
+
+
 _LIST_ITEM_RE = re.compile(r"^(?:[-*+]\s+|\d+[.)]\s+|\[[ xX]\]\s+)")
 _TABLE_SEPARATOR_RE = re.compile(r"^\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?$")
 _FAQ_PREFIX_RE = re.compile(r"^(?:q(?:uestion)?|faq)\s*[:\-]\s+", re.IGNORECASE)
@@ -294,6 +361,8 @@ class WebKnowledgeService:
         self.config = config
         embedding_config = config.embedding
         rerank_config = config.rerank
+        if not rerank_config.enabled:
+            raise ValueError("External web knowledge requires knowledge.rerank.enabled=true")
         self.embedder = embedder or DashScopeEmbeddingBackend(
             api_key=api_key or "",
             api_base=embedding_config.api_base,
@@ -423,24 +492,15 @@ class WebKnowledgeService:
             now=now,
         )
 
-    async def search(
+    async def search_local(
         self,
         query: str,
-        *,
-        doc_limit: int | None = None,
-        evidence_limit: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> LocalKnowledgeResult:
+        """Return the ranked candidate pool before evidence filtering and output limits."""
         normalized_query = " ".join(query.split())
         if not normalized_query or not self.db.has_pages():
-            return {
-                "query": normalized_query,
-                "sufficient": False,
-                "candidate_parents": [],
-                "evidence_chunks": [],
-            }
+            return LocalKnowledgeResult(normalized_query, (), ())
 
-        resolved_doc_limit = min(max(doc_limit or self.config.doc_limit, 1), 100)
-        resolved_evidence_limit = min(max(evidence_limit or self.config.evidence_limit, 1), 100)
         child_fts_limit = min(max(self.config.child_fts_limit, 1), 100)
         child_vec_limit = min(max(self.config.child_vec_limit, 1), 100)
         rerank_child_pool = min(max(self.config.rerank_child_pool, 1), 100)
@@ -457,20 +517,18 @@ class WebKnowledgeService:
             normalized_query,
             fused_children[:rerank_child_pool],
         )
-        candidate_parents = self._aggregate_candidate_parents(reranked_children, resolved_doc_limit)
-        evidence_chunks = self._select_evidence_chunks(
+        candidate_parents = self._aggregate_candidate_parents(reranked_children)
+        parent_rank = {item["parent_id"]: item["parent_rank"] for item in candidate_parents}
+        evidence_chunks = sorted(
             reranked_children,
-            candidate_parents,
-            resolved_evidence_limit,
-            self.config.max_children_per_parent,
+            key=lambda item: (parent_rank[item["parent_id"]], item["rerank_rank"]),
         )
 
-        return {
-            "query": normalized_query,
-            "sufficient": self._has_sufficient_evidence(evidence_chunks),
-            "candidate_parents": [self._serialize_candidate_parent(item) for item in candidate_parents],
-            "evidence_chunks": [self._serialize_evidence_chunk(item) for item in evidence_chunks],
-        }
+        return LocalKnowledgeResult(
+            query=normalized_query,
+            parents=tuple(self._serialize_candidate_parent(item) for item in candidate_parents),
+            children=tuple(self._serialize_evidence_chunk(item) for item in evidence_chunks),
+        )
 
     def parse_web_fetch_result(
         self,
@@ -530,11 +588,7 @@ class WebKnowledgeService:
             return []
 
         if self.reranker is None:
-            reranked = [dict(item) for item in child_hits]
-            for rank, item in enumerate(reranked, start=1):
-                item["rerank_score"] = float(item.get("rrf_score", 0.0))
-                item["rerank_rank"] = rank
-            return reranked
+            raise RuntimeError("External web knowledge reranker is unavailable")
 
         pairs = [(query, str(item.get("text") or "")) for item in child_hits]
         scores = await self.reranker.score_pairs(pairs)
@@ -559,7 +613,6 @@ class WebKnowledgeService:
     @staticmethod
     def _aggregate_candidate_parents(
         child_hits: list[dict[str, Any]],
-        doc_limit: int,
     ) -> list[dict[str, Any]]:
         aggregated: dict[int, dict[str, Any]] = {}
         for child_hit in child_hits:
@@ -595,86 +648,51 @@ class WebKnowledgeService:
             if second_child_score != float("-inf") and second_child_score > 0.0:
                 coverage_bonus = min(_PARENT_COVERAGE_BONUS, second_child_score * _PARENT_COVERAGE_BONUS)
             item["parent_score"] = best_child_score + coverage_bonus
+            item["best_child_rerank_score"] = best_child_score
             ranked.append(item)
 
-        ranked.sort(key=lambda item: (-float(item.get("parent_score", 0.0)), int(item["parent_id"])))
-        return ranked[:doc_limit]
+        ranked.sort(
+            key=lambda item: (-float(item.get("parent_score", 0.0)), int(item["parent_id"]))
+        )
+        for rank, item in enumerate(ranked, start=1):
+            item["parent_rank"] = rank
+        return ranked
 
     @staticmethod
-    def _select_evidence_chunks(
-        child_hits: list[dict[str, Any]],
-        candidate_parents: list[dict[str, Any]],
-        evidence_limit: int,
-        max_children_per_parent: int,
-    ) -> list[dict[str, Any]]:
-        if not candidate_parents:
-            return []
-        parent_rank = {
-            int(item["parent_id"]): rank
-            for rank, item in enumerate(candidate_parents, start=1)
-        }
-        selected: list[dict[str, Any]] = []
-        per_parent_counts: dict[int, int] = {}
-        sorted_hits = sorted(
-            (item for item in child_hits if int(item["parent_id"]) in parent_rank),
-            key=lambda item: (
-                parent_rank[int(item["parent_id"])],
-                int(item.get("rerank_rank") or 999),
-                int(item["child_id"]),
+    def _serialize_candidate_parent(item: dict[str, Any]) -> ParentEvidence:
+        return ParentEvidence(
+            parent_id=int(item["parent_id"]),
+            page_id=int(item["page_id"]),
+            title=str(item.get("title") or ""),
+            url=str(item.get("final_url") or ""),
+            text=str(item.get("text") or ""),
+            partial=bool(item.get("is_partial")),
+            sources=tuple(item.get("sources") or ()),
+            rerank_score=float(item.get("best_child_rerank_score") or 0.0),
+            rerank_rank=int(item.get("parent_rank") or 0),
+        )
+
+    @staticmethod
+    def _serialize_evidence_chunk(item: dict[str, Any]) -> ChildEvidence:
+        return ChildEvidence(
+            child_id=int(item["child_id"]),
+            parent_id=int(item["parent_id"]),
+            page_id=int(item["page_id"]),
+            title=str(item.get("title") or ""),
+            url=str(item.get("final_url") or ""),
+            text=str(item.get("text") or ""),
+            partial=bool(item.get("is_partial")),
+            sources=tuple(item.get("sources") or ()),
+            rerank_score=float(item.get("rerank_score") or 0.0),
+            rerank_rank=int(item.get("rerank_rank") or 0),
+            fts_rank=int(item["fts_rank"]) if item.get("fts_rank") is not None else None,
+            vector_rank=int(item["vec_rank"]) if item.get("vec_rank") is not None else None,
+            vector_similarity=(
+                float(item["vector_similarity"])
+                if item.get("vector_similarity") is not None
+                else None
             ),
         )
-        for item in sorted_hits:
-            parent_id = int(item["parent_id"])
-            if per_parent_counts.get(parent_id, 0) >= max_children_per_parent:
-                continue
-            selected.append(item)
-            per_parent_counts[parent_id] = per_parent_counts.get(parent_id, 0) + 1
-            if len(selected) >= evidence_limit:
-                break
-        return selected
-
-    @staticmethod
-    def _has_sufficient_evidence(chunks: list[dict[str, Any]]) -> bool:
-        if not chunks:
-            return False
-
-        def _is_dual_source(item: dict[str, Any]) -> bool:
-            return {"fts", "vec"}.issubset(set(item.get("sources", [])))
-
-        def _is_strong_dual_source(item: dict[str, Any]) -> bool:
-            return _is_dual_source(item) and int(item.get("fts_rank") or 999) == 1 and int(item.get("vec_rank") or 999) == 1
-
-        def _is_high_confidence(item: dict[str, Any]) -> bool:
-            return int(item.get("fts_rank") or 999) <= 1 or int(item.get("vec_rank") or 999) <= 1
-
-        if any(_is_strong_dual_source(item) for item in chunks):
-            return True
-        return len(chunks) >= 2 and any(_is_high_confidence(item) for item in chunks)
-
-    @staticmethod
-    def _serialize_candidate_parent(item: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "parent_id": int(item["parent_id"]),
-            "page_id": int(item["page_id"]),
-            "title": str(item.get("title") or ""),
-            "final_url": str(item.get("final_url") or ""),
-            "text": str(item.get("text") or ""),
-            "partial": bool(item.get("is_partial")),
-            "sources": list(item.get("sources") or []),
-        }
-
-    @staticmethod
-    def _serialize_evidence_chunk(item: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "child_id": int(item["child_id"]),
-            "parent_id": int(item["parent_id"]),
-            "page_id": int(item["page_id"]),
-            "title": str(item.get("title") or ""),
-            "final_url": str(item.get("final_url") or ""),
-            "text": str(item.get("text") or ""),
-            "partial": bool(item.get("is_partial")),
-            "sources": list(item.get("sources") or []),
-        }
 
 
 class WebKnowledgeHook(AgentHook):

@@ -7,6 +7,7 @@ import pytest
 from openai.types.responses.tool_choice_function import ToolChoiceFunction
 
 from nanobot.providers import openai_codex_provider as codex
+from nanobot.providers.base import ToolCallRequest
 
 
 @pytest.mark.asyncio
@@ -44,3 +45,31 @@ async def test_codex_converts_chat_tool_choice_to_responses(monkeypatch, stream,
     else:
         assert body["tool_choice"] == choice
     assert body["tools"][0]["name"] == "report_evidence_assessment"
+
+
+@pytest.mark.asyncio
+async def test_codex_can_complete_knowledge_assessment(monkeypatch):
+    from nanobot.agent.knowledge import LocalKnowledgeResult
+    from nanobot.tests.knowledge.test_knowledge_retrieval import _child, _parent, _retriever
+
+    monkeypatch.setattr(
+        codex.asyncio, "to_thread",
+        AsyncMock(return_value=SimpleNamespace(account_id="test", access="test")),
+    )
+
+    async def request(url, headers, body, **kwargs):
+        choice = ToolChoiceFunction.model_validate(body["tool_choice"])
+        return None, [ToolCallRequest(
+            id="assessment", name=choice.name,
+            arguments={"sufficient": True, "missing_points": [], "reason": "Date is stated"},
+        )], "stop"
+
+    monkeypatch.setattr(codex, "_request_codex", request)
+    retriever, _ = _retriever(
+        LocalKnowledgeResult("When?", (_parent(),), (_child(),)), codex.OpenAICodexProvider()
+    )
+
+    result = await retriever.retrieve("When?")
+
+    assert result.status == "sufficient"
+    assert result.sufficient is True

@@ -15,6 +15,7 @@ from loguru import logger
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from nanobot.agent.knowledge import WebKnowledgeHook, WebKnowledgeService
+from nanobot.agent.knowledge_retrieval import KnowledgeRetriever
 from nanobot.agent.memory import MemoryConsolidator
 from nanobot.agent.memory_service import MemoryService
 from nanobot.agent.memory_sync import MarkdownValidationError, MemoryConflictError
@@ -245,11 +246,18 @@ class AgentLoop:
             asyncio.Semaphore(_max) if _max > 0 else None
         )
         self.web_knowledge_service: WebKnowledgeService | None = None
+        self.knowledge_retriever: KnowledgeRetriever | None = None
         if self.knowledge_config.enabled:
             self.web_knowledge_service = WebKnowledgeService(
                 workspace=workspace,
                 config=self.knowledge_config,
                 api_key=knowledge_api_key,
+            )
+            self.knowledge_retriever = KnowledgeRetriever(
+                service=self.web_knowledge_service,
+                provider=self.provider,
+                model=self.model,
+                config=self.knowledge_config,
             )
             self._system_hooks.append(
                 WebKnowledgeHook(
@@ -279,14 +287,16 @@ class AgentLoop:
         for cls in (WriteFileTool, EditFileTool, ListDirTool):
             self.tools.register(cls(workspace=self.workspace, allowed_dir=allowed_dir))
         if self.exec_config.enable:
-            self.tools.register(ExecTool(
-                working_dir=str(self.workspace),
-                timeout=self.exec_config.timeout,
-                restrict_to_workspace=self.restrict_to_workspace,
-                path_append=self.exec_config.path_append,
-            ))
-        if self.web_knowledge_service is not None:
-            self.tools.register(KnowledgeSearchTool(self.web_knowledge_service))
+            self.tools.register(
+                ExecTool(
+                    working_dir=str(self.workspace),
+                    timeout=self.exec_config.timeout,
+                    restrict_to_workspace=self.restrict_to_workspace,
+                    path_append=self.exec_config.path_append,
+                )
+            )
+        if self.knowledge_retriever is not None:
+            self.tools.register(KnowledgeSearchTool(self.knowledge_retriever))
         self.tools.register(WebSearchTool(config=self.web_search_config, proxy=self.web_proxy))
         self.tools.register(WebFetchTool(proxy=self.web_proxy))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound))

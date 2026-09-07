@@ -191,9 +191,14 @@ class KnowledgeRerankConfig(Base):
 
     enabled: bool = True
     provider: Literal["dashscope"] = "dashscope"
-    model: str = "qwen3-rerank"
-    api_base: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    instruct: str = "Given a web search query, retrieve relevant passages that answer the query."
+    model: str = Field(default="qwen3-rerank", min_length=1)
+    api_base: str = Field(
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1", min_length=1
+    )
+    instruct: str = Field(
+        default="Given a web search query, retrieve relevant passages that answer the query.",
+        min_length=1,
+    )
 
 
 class KnowledgeConfig(Base):
@@ -212,6 +217,9 @@ class KnowledgeConfig(Base):
     child_vec_limit: int = Field(default=24, ge=1, le=100)
     rerank_child_pool: int = Field(default=24, ge=1, le=100)
     max_children_per_parent: int = Field(default=2, ge=1, le=10)
+    rerank_relevance_threshold: float = Field(default=0.2)
+    evidence_token_budget: int = Field(default=4000, ge=1)
+    assessment_timeout_seconds: float = Field(default=30.0, gt=0)
 
 
 class Config(BaseSettings): # 继承自 pydantic.BaseSettings

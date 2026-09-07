@@ -120,3 +120,10 @@ metric implementation; they do not establish benchmark quality.
 
 Evaluation corpora, relevance judgments and generated reports are local inputs
 and outputs, not repository content. Store them outside tracked source files.
+
+## Evidence selection and assessment
+
+Local search returns typed parent and child candidates. A shared selector applies
+relevance, count and token limits before the configured main model assesses
+coverage. Retrieval and assessment failures are explicit states. See
+[the P4 contract](KNOWLEDGE_P4_IMPLEMENTATION.md).

@@ -110,6 +110,8 @@ def reciprocal_rank_fuse(
             current = fused.setdefault(key, {**row, "sources": [], "rrf_score": 0.0})
             current["rrf_score"] = float(current["rrf_score"]) + 1.0 / (_RRF_K + rank)
             current[f"{source_name}_rank"] = rank
+            if row.get("rank_score") is not None:
+                current[f"{source_name}_score"] = float(row["rank_score"])
             if source_name not in current["sources"]:
                 current["sources"].append(source_name)
             for item_key, item_value in row.items():

@@ -115,8 +115,8 @@ IMPORTANT: To send files (images, documents, audio, video) to the user, you MUST
             return ""
         return (
             "- For non-current external factual questions, use 'kb_search' before calling "
-            "'web_search' or 'web_fetch'. 'kb_search' returns candidate parent blocks and child "
-            "evidence chunks from the local web knowledge base. If it reports insufficient "
+            "'web_search' or 'web_fetch'. 'kb_search' returns traceable parent/child evidence and "
+            "a coverage assessment from the local web knowledge base. If it reports insufficient "
             "evidence, or the user asks for the latest/current/today information, verify with "
             "live web tools."
         )

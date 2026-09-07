@@ -16,6 +16,7 @@ import pytest
 
 from nanobot.agent.hook import AgentHook
 from nanobot.agent.knowledge import WebKnowledgeHook
+from nanobot.agent.knowledge_retrieval import KnowledgeResult
 from nanobot.agent.runner import AgentRunResult
 from nanobot.agent.tools.knowledge import KnowledgeSearchTool
 from nanobot.bus.queue import MessageBus
@@ -72,6 +73,9 @@ def test_config_defaults_to_disabled_web_knowledge() -> None:
     assert config.knowledge.child_vec_limit == 24
     assert config.knowledge.rerank_child_pool == 24
     assert config.knowledge.max_children_per_parent == 2
+    assert config.knowledge.rerank_relevance_threshold == 0.2
+    assert config.knowledge.evidence_token_budget == 4000
+    assert config.knowledge.assessment_timeout_seconds == 30.0
 
 
 def test_nanobot_from_config_passes_knowledge_config(tmp_path: Path) -> None:
@@ -97,16 +101,18 @@ def test_kb_search_tool_defaults_match_production_limits() -> None:
 @pytest.mark.asyncio
 async def test_agent_loop_registers_kb_search_when_knowledge_enabled(tmp_path: Path) -> None:
     fake_service = MagicMock()
-    fake_service.search = AsyncMock(
-        return_value={
-            "query": "linux",
-            "sufficient": True,
-            "candidate_parents": [],
-            "evidence_chunks": [],
-        }
+    fake_retriever = MagicMock()
+    fake_retriever.retrieve = AsyncMock(
+        return_value=KnowledgeResult(
+            query="linux", status="sufficient", sufficient=True, reason="covered",
+            missing_points=(), parents=(), children=(),
+        )
     )
 
-    with patch("nanobot.agent.loop.WebKnowledgeService", return_value=fake_service) as service_cls:
+    with (
+        patch("nanobot.agent.loop.WebKnowledgeService", return_value=fake_service) as service_cls,
+        patch("nanobot.agent.loop.KnowledgeRetriever", return_value=fake_retriever),
+    ):
         loop = AgentLoop(
             bus=MessageBus(),
             provider=_make_provider(),
@@ -122,13 +128,16 @@ async def test_agent_loop_registers_kb_search_when_knowledge_enabled(tmp_path: P
 
     result = await loop.tools.execute("kb_search", {"query": "linux"})
 
-    fake_service.search.assert_awaited_once()
+    fake_retriever.retrieve.assert_awaited_once()
     payload = json.loads(result)
     assert payload == {
         "query": "linux",
+        "status": "sufficient",
         "sufficient": True,
-        "candidate_parents": [],
-        "evidence_chunks": [],
+        "reason": "covered",
+        "missing_points": [],
+        "parents": [],
+        "children": [],
     }
 
 

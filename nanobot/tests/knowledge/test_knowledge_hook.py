@@ -58,6 +58,11 @@ class _UnusedProvider(LLMProvider):
         return "test-model"
 
 
+class _UnusedReranker:
+    async def score_pairs(self, pairs: list[tuple[str, str]]) -> list[float]:
+        return [0.0 for _ in pairs]
+
+
 def _success_payload(url: str) -> str:
     return json.dumps(
         {
@@ -79,9 +84,10 @@ def _success_payload(url: str) -> str:
 async def test_web_knowledge_hook_only_schedules_successful_text_fetches(tmp_path) -> None:
     service = WebKnowledgeService(
         workspace=tmp_path,
-        config=KnowledgeConfig.model_validate({"enabled": True, "rerank": {"enabled": False}}),
+        config=KnowledgeConfig(enabled=True),
         db=WebKnowledgeDatabase(tmp_path, vec_backend="array"),
         embedder=_KeywordEmbedder(),
+        reranker=_UnusedReranker(),
     )
 
     scheduled: list[asyncio.Task[None]] = []

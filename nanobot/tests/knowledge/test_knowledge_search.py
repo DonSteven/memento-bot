@@ -114,14 +114,14 @@ def _service(tmp_path, provider: _UnusedProvider, *, reranker: _KeywordReranker 
         chunk_overlap_chars=20,
         doc_limit=10,
         evidence_limit=5,
-        rerank={"enabled": reranker is not None},
+        rerank={"enabled": True},
     )
     return WebKnowledgeService(
         workspace=tmp_path,
         config=config,
         db=WebKnowledgeDatabase(tmp_path, vec_backend="array"),
         embedder=_KeywordEmbedder(),
-        reranker=reranker,
+        reranker=reranker or _KeywordReranker(),
     )
 
 
@@ -143,25 +143,21 @@ async def test_service_ingests_web_fetch_results_and_searches_locally(tmp_path) 
     await service.ingest_web_fetch_result({"url": "https://example.com/linux-6-9"}, linux_payload)
     await service.ingest_web_fetch_result({"url": "https://example.com/nanobot-kb"}, kb_payload)
 
-    result = await service.search("When was Linux 6.9 released?")
+    result = await service.search_local("When was Linux 6.9 released?")
 
-    candidate_parent_ids = {item["parent_id"] for item in result["candidate_parents"]}
-    evidence_parent_ids = {item["parent_id"] for item in result["evidence_chunks"]}
+    candidate_parent_ids = {item.parent_id for item in result.parents}
+    evidence_parent_ids = {item.parent_id for item in result.children}
 
     assert provider.calls == 0
-    assert result["sufficient"] is True
-    assert result["candidate_parents"][0]["final_url"] == "https://example.com/linux-6-9"
-    assert result["candidate_parents"][0]["partial"] is False
-    assert result["candidate_parents"][0]["text"]
-    assert "summary" not in result["candidate_parents"][0]
-    assert result["evidence_chunks"]
+    assert result.parents[0].url == "https://example.com/linux-6-9"
+    assert result.parents[0].partial is False
+    assert result.parents[0].text
+    assert result.children
     assert evidence_parent_ids.issubset(candidate_parent_ids)
-    assert result["evidence_chunks"][0]["final_url"] == "https://example.com/linux-6-9"
-    assert "June 2024" in result["evidence_chunks"][0]["text"]
-    assert set(result) == {"query", "sufficient", "candidate_parents", "evidence_chunks"}
-    assert {"child_id", "parent_id", "page_id", "title", "final_url", "text", "partial"}.issubset(
-        result["evidence_chunks"][0]
-    )
+    assert result.children[0].url == "https://example.com/linux-6-9"
+    assert "June 2024" in result.children[0].text
+    assert result.children[0].rerank_score == 27.0
+    assert result.children[0].sources
     assert reranker.calls
     assert reranker.calls[0][0][0] == "When was Linux 6.9 released?"
 
@@ -205,35 +201,19 @@ async def test_service_search_marks_partial_pages_and_restricts_evidence_to_cand
         ),
     )
 
-    result = await service.search("Which page said the Linux 6.9 release notes were truncated?")
+    result = await service.search_local("Which page said the Linux 6.9 release notes were truncated?")
 
-    candidate_parent_ids = {item["parent_id"] for item in result["candidate_parents"]}
-    evidence_parent_ids = {item["parent_id"] for item in result["evidence_chunks"]}
+    candidate_parent_ids = {item.parent_id for item in result.parents}
+    evidence_parent_ids = {item.parent_id for item in result.children}
 
-    assert result["candidate_parents"][0]["final_url"] == "https://example.com/linux-6-9-notes"
-    assert result["candidate_parents"][0]["partial"] is True
-    assert result["evidence_chunks"]
+    assert result.parents[0].url == "https://example.com/linux-6-9-notes"
+    assert result.parents[0].partial is True
+    assert result.children
     assert any(
-        item["final_url"] == "https://example.com/linux-6-9-notes" and item["partial"] is True
-        for item in result["evidence_chunks"]
+        item.url == "https://example.com/linux-6-9-notes" and item.partial is True
+        for item in result.children
     )
     assert evidence_parent_ids.issubset(candidate_parent_ids)
-
-
-def test_sufficient_evidence_rule_requires_two_hits_or_top1_dual_source() -> None:
-    assert WebKnowledgeService._has_sufficient_evidence([]) is False
-    assert WebKnowledgeService._has_sufficient_evidence(
-        [{"child_id": 1, "sources": ["fts", "vec"], "fts_rank": 2, "vec_rank": 2}]
-    ) is False
-    assert WebKnowledgeService._has_sufficient_evidence(
-        [
-            {"child_id": 1, "sources": ["fts"], "fts_rank": 1},
-            {"child_id": 2, "sources": ["vec"], "vec_rank": 4},
-        ]
-    ) is True
-    assert WebKnowledgeService._has_sufficient_evidence(
-        [{"child_id": 3, "sources": ["fts", "vec"], "fts_rank": 1, "vec_rank": 1}]
-    ) is True
 
 
 @pytest.mark.asyncio
@@ -250,15 +230,12 @@ async def test_service_ignores_invalid_or_non_text_fetch_results_and_reports_ins
         [{"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}}],
     ) is None
 
-    result = await service.search("What is the capital of France?")
+    result = await service.search_local("What is the capital of France?")
 
     assert provider.calls == 0
-    assert result == {
-        "query": "What is the capital of France?",
-        "sufficient": False,
-        "candidate_parents": [],
-        "evidence_chunks": [],
-    }
+    assert result.query == "What is the capital of France?"
+    assert result.parents == ()
+    assert result.children == ()
 
 
 def test_parent_blocks_prioritize_headings_and_keep_structured_sections_together() -> None:
@@ -352,7 +329,6 @@ def test_parent_aggregation_is_driven_by_best_reranked_child() -> None:
                 "rerank_score": 0.95,
             },
         ],
-        10,
     )
 
     assert [item["parent_id"] for item in ranked[:2]] == [20, 10]
@@ -376,16 +352,15 @@ async def test_service_reranks_top_child_pool_before_parent_aggregation(tmp_path
             status=200,
         )
 
-    result = await service.search("When was Linux 6.9 released?")
+    result = await service.search_local("When was Linux 6.9 released?")
 
     assert reranker.calls
     assert len(reranker.calls[0]) == 24
-    assert len(result["candidate_parents"]) == 10
-    assert len(result["evidence_chunks"]) == 5
-    per_parent_counts: dict[int, int] = {}
-    for item in result["evidence_chunks"]:
-        per_parent_counts[item["parent_id"]] = per_parent_counts.get(item["parent_id"], 0) + 1
-    assert all(count <= 2 for count in per_parent_counts.values())
+    assert len(result.parents) == 24
+    assert len(result.children) == 24
+    assert {child.parent_id for child in result.children} == {
+        parent.parent_id for parent in result.parents
+    }
 
 
 def test_service_requires_dashscope_key_for_configured_reranker(tmp_path) -> None:
@@ -396,3 +371,54 @@ def test_service_requires_dashscope_key_for_configured_reranker(tmp_path) -> Non
             db=WebKnowledgeDatabase(tmp_path, vec_backend="array"),
             embedder=_KeywordEmbedder(),
         )
+
+
+def test_service_rejects_disabled_reranking(tmp_path) -> None:
+    with pytest.raises(ValueError, match="knowledge.rerank.enabled=true"):
+        WebKnowledgeService(
+            workspace=tmp_path,
+            config=KnowledgeConfig(enabled=True, rerank={"enabled": False}),
+            db=WebKnowledgeDatabase(tmp_path, vec_backend="array"),
+            embedder=_KeywordEmbedder(),
+            reranker=_KeywordReranker(),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("vec_backend", ["array", "sqlite-vec"])
+@pytest.mark.parametrize("query", ["test", "no lexical overlap"])
+async def test_vector_similarity_is_cosine_for_both_backends(tmp_path, vec_backend, query) -> None:
+    if vec_backend == "sqlite-vec":
+        pytest.importorskip("sqlite_vec")
+
+    class FixedEmbedder:
+        dimension = 2
+
+        async def embed_documents(self, texts):
+            return [[0.6, 0.8] for _ in texts]
+
+        async def embed_query(self, text):
+            return [1.0, 0.0]
+
+    service = WebKnowledgeService(
+        workspace=tmp_path,
+        config=KnowledgeConfig(enabled=True),
+        db=WebKnowledgeDatabase(tmp_path, vec_backend=vec_backend),
+        embedder=FixedEmbedder(),
+        reranker=_KeywordReranker(),
+    )
+    await service.ingest_document(
+        source_url="https://example.com/test",
+        final_url="https://example.com/test",
+        title="test",
+        raw_text="test answer",
+        extractor="text",
+        status=200,
+    )
+
+    result = await service.search_local(query)
+
+    assert len(result.children) == 1
+    child = result.children[0]
+    assert child.vector_similarity == pytest.approx(0.6)
+    assert child.sources == (("fts", "vec") if query == "test" else ("vec",))

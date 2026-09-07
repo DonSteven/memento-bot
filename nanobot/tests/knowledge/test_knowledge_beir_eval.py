@@ -1,6 +1,6 @@
 # Knowledge BEIR eval test content:
 # - verifies BEIR corpus documents are ingested into the external knowledge DB
-# - verifies the runner uses the current search() limits and emits metrics aligned to doc_limit
+# - verifies the runner uses the production evidence selection and document cutoffs and emits metrics aligned to doc_limit
 # - verifies reruns dedupe unchanged documents and report parent-child diagnostics
 
 from __future__ import annotations
@@ -223,14 +223,14 @@ def test_run_knowledge_beir_eval_uses_current_search_limits_and_reports_current_
     )
 
     service = _service(tmp_path)
-    recorded_limits: list[tuple[int | None, int | None]] = []
-    original_search = service.search
+    recorded_queries: list[str] = []
+    original_search = service.search_local
 
-    async def _recorded_search(query: str, *, doc_limit: int | None = None, evidence_limit: int | None = None):
-        recorded_limits.append((doc_limit, evidence_limit))
-        return await original_search(query, doc_limit=doc_limit, evidence_limit=evidence_limit)
+    async def _recorded_search(query: str):
+        recorded_queries.append(query)
+        return await original_search(query)
 
-    service.search = _recorded_search  # type: ignore[method-assign]
+    service.search_local = _recorded_search  # type: ignore[method-assign]
 
     report = run_knowledge_beir_eval(
         workspace=tmp_path,
@@ -242,7 +242,7 @@ def test_run_knowledge_beir_eval_uses_current_search_limits_and_reports_current_
         embedding_model="fake-embedding-model",
     )
 
-    assert recorded_limits == [(10, 5), (10, 5)]
+    assert len(recorded_queries) == 2
     assert report["evaluation"] == "knowledge_beir"
     assert report["doc_limit"] == 10
     assert report["evidence_limit"] == 5
@@ -252,7 +252,7 @@ def test_run_knowledge_beir_eval_uses_current_search_limits_and_reports_current_
     assert set(report["summary"]["mrr"]) == {10}
     assert "summary_model" not in report
     assert report["diagnostics"]["average_candidate_parents"] <= 10.0
-    assert report["diagnostics"]["average_evidence_children"] >= 0.0
+    assert 0.0 <= report["diagnostics"]["average_evidence_children"] <= 5.0
     assert report["latency"]["average_query_search_latency_seconds"] >= 0.0
     assert len(report["latency"]["slowest_queries"]) <= 5
     slowest = report["latency"]["slowest_queries"]

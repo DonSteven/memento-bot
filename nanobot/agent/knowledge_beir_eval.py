@@ -12,6 +12,7 @@ from urllib.parse import quote, unquote, urlsplit
 
 from nanobot.agent.knowledge import WebKnowledgeService
 from nanobot.agent.knowledge_db import WebKnowledgeDatabase
+from nanobot.agent.knowledge_retrieval import select_evidence
 from nanobot.config.schema import KnowledgeConfig
 
 REPORT_VERSION = 2
@@ -88,7 +89,7 @@ def _build_results_payload(
     ranked_doc_ids: list[str] = []
     scores: dict[str, float] = {}
     for parent in candidate_parents:
-        doc_id = _doc_id_from_url(str(parent.get("final_url") or ""), dataset)
+        doc_id = _doc_id_from_url(str(parent.get("url") or ""), dataset)
         if not doc_id or doc_id in scores:
             continue
         ranked_doc_ids.append(doc_id)
@@ -254,14 +255,14 @@ async def _run_knowledge_beir_eval_async(
     cases: list[dict[str, Any]] = []
     for qid, query_text in queries.items():
         query_search_started_at = time.perf_counter()
-        search_result = await service.search(
-            str(query_text),
-            doc_limit=doc_limit,
-            evidence_limit=evidence_limit,
+        search_result = await service.search_local(str(query_text))
+        candidate_parents = search_result.parents[:doc_limit]
+        _, evidence_children = select_evidence(
+            search_result, service.config, doc_limit=doc_limit, evidence_limit=evidence_limit
         )
         query_search_latency_seconds = time.perf_counter() - query_search_started_at
         result_scores, retrieved_doc_ids = _build_results_payload(
-            list(search_result["candidate_parents"]),
+            [parent.to_dict() for parent in candidate_parents],
             dataset=dataset,
         )
         results[str(qid)] = result_scores
@@ -269,10 +270,10 @@ async def _run_knowledge_beir_eval_async(
         evidence_doc_ids: list[str] = []
         top_evidence_parent_ids: list[int] = []
         top_evidence_child_ids: list[int] = []
-        for chunk in search_result["evidence_chunks"]:
-            top_evidence_parent_ids.append(int(chunk["parent_id"]))
-            top_evidence_child_ids.append(int(chunk["child_id"]))
-            doc_id = _doc_id_from_url(str(chunk.get("final_url") or ""), dataset)
+        for chunk in evidence_children:
+            top_evidence_parent_ids.append(chunk.parent_id)
+            top_evidence_child_ids.append(chunk.child_id)
+            doc_id = _doc_id_from_url(chunk.url, dataset)
             if doc_id and doc_id not in evidence_doc_ids:
                 evidence_doc_ids.append(doc_id)
 
@@ -289,7 +290,7 @@ async def _run_knowledge_beir_eval_async(
                 "gold_doc_ids": gold_doc_ids,
                 "retrieved_doc_ids": retrieved_doc_ids,
                 "top_candidate_parent_ids": [
-                    int(parent["parent_id"]) for parent in search_result["candidate_parents"]
+                    parent.parent_id for parent in candidate_parents
                 ],
                 "top_evidence_parent_ids": top_evidence_parent_ids,
                 "top_evidence_child_ids": top_evidence_child_ids,
@@ -371,7 +372,7 @@ def render_knowledge_beir_report_markdown(report: dict[str, Any]) -> str:
         "",
         "This report measures the current production parent-child retrieval path.",
         (
-            f"Document recall is capped at top-{report['doc_limit']} because production `search()` "
+            f"Document recall is capped at top-{report['doc_limit']} because the evaluation "
             f"keeps `doc_limit <= {report['doc_limit']}` for this run."
         ),
         "These results use the same retrieval and rerank path as production, with no benchmark-only overrides.",
