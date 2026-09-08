@@ -155,5 +155,5 @@ model context limit; token counts use a provider counter when available, otherwi
 which is not a guarantee of exact provider-side accounting, particularly for multimodal requests.
 The hard stop prevents requests already known to exceed the configured limit.
 
-For old workspaces, follow [offline conversion and switching](MEMORY_KNOWLEDGE_UPGRADE.md). An offline
+For old workspaces, follow [offline conversion and switching](../spec/MEMORY_KNOWLEDGE_UPGRADE.md). An offline
 copy marked `REBUILD_REQUIRED` must finish its separately authorized embedding rebuild before use.

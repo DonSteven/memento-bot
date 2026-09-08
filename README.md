@@ -951,7 +951,7 @@ Results distinguish `sufficient`, `insufficient`, `retrieval_error`, `assessment
 preserves usable evidence and reports failures; no results remains insufficient. Personal memory
 misses do not trigger this workflow. Online supplementation sends the query to the search provider,
 fetches external URLs, and sends extracted text to the configured embedding/reranking and assessment
-services, which may incur their normal API charges. See [P5 behavior and validation](docs/KNOWLEDGE_P5_IMPLEMENTATION.md).
+services, which may incur their normal API charges. See [P5 behavior and validation](spec/KNOWLEDGE_P5_IMPLEMENTATION.md).
 
 The agent checks the actual prepared request before each chat model call, including after tools
 and hooks. It reserves `agents.defaults.maxTokens` within `contextWindowTokens`, then removes whole
@@ -960,7 +960,7 @@ exceed the limit stop with `context_limit` (HTTP 400; SDK `RunResult.stop_reason
 are used when available, otherwise local token estimates; configure the correct model limit.
 Existing history consolidation remains in use and does not cause extra retrieval merely for counting.
 
-Old workspaces must follow [offline conversion and switching](docs/MEMORY_KNOWLEDGE_UPGRADE.md).
+Old workspaces must follow [offline conversion and switching](spec/MEMORY_KNOWLEDGE_UPGRADE.md).
 The script defaults to read-only preflight. Conversion writes a fresh copy; real embedding rebuilds
 require a separate explicit option and may incur API costs. No automatic user workspace switch occurs.
 
