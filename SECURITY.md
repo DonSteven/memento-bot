@@ -2,17 +2,15 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in nanobot, please report it by:
+If you discover a security vulnerability in Memento Bot, please report it by:
 
 1. **DO NOT** open a public GitHub issue
-2. Create a private security advisory on GitHub or contact the repository maintainers (xubinrencs@gmail.com)
+2. Use GitHub private vulnerability reporting for this repository if available, or contact [the maintainer](https://github.com/DonSteven) through a private contact method listed on their profile. The upstream maintainers are not the contact for Memento Bot-specific reports.
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce
    - Potential impact
    - Suggested fix (if any)
-
-We aim to respond to security reports within 48 hours.
 
 ## Security Best Practices
 
@@ -109,7 +107,7 @@ pip install pip-audit
 pip-audit
 
 # Update to latest secure versions
-pip install --upgrade nanobot-ai
+python -m pip install -e '.[web_knowledge]'  # from an updated Memento Bot checkout
 ```
 
 For Node.js dependencies (WhatsApp bridge):
@@ -133,7 +131,7 @@ For production use:
    ```bash
    # Run in a container or VM
    docker run --rm -it python:3.11
-   pip install nanobot-ai
+   python -m pip install -e '.[web_knowledge]'  # from the Memento Bot checkout
    ```
 
 2. **Use a Dedicated User**
@@ -163,7 +161,7 @@ For production use:
 6. **Regular Updates**
    ```bash
    # Check for updates weekly
-   pip install --upgrade nanobot-ai
+   python -m pip install -e '.[web_knowledge]'  # from an updated Memento Bot checkout
    ```
 
 ### 8. Development vs Production
@@ -237,7 +235,7 @@ If you suspect a security breach:
 
 ## Security Checklist
 
-Before deploying nanobot:
+Before deploying Memento Bot:
 
 - [ ] API keys stored securely (not in code)
 - [ ] Config file permissions set to 0600
@@ -254,7 +252,7 @@ Before deploying nanobot:
 
 **Last Updated**: 2026-02-03
 
-For the latest security updates and announcements, check:
+For upstream security updates and announcements (separate from Memento Bot), check:
 - GitHub Security Advisories: https://github.com/HKUDS/nanobot/security/advisories
 - Release Notes: https://github.com/HKUDS/nanobot/releases
 

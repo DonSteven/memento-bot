@@ -1,3 +1,8 @@
+# Upstream Community Reference
+
+These are HKUDS/nanobot community links, not Memento Bot support channels.
+For this project, use [DonSteven/memento-bot](https://github.com/DonSteven/memento-bot).
+
 We provide QR codes for joining the HKUDS discussion groups on **WeChat** and **Feishu**.
 
 You can join by scanning the QR codes below:
