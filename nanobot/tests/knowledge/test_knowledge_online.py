@@ -222,7 +222,10 @@ async def test_url_validation_exception_preserves_evidence_and_continues(
     )
     provider.arguments = {"sufficient": False, "reason": "Incomplete", "missing_points": ["details"]}
     retriever.config.online_max_urls = 2
-    bad_url = "https://" + "a" * 64 + ".example/path"
+    bad_host = "a" * 64 + ".example"
+    bad_url = f"https://{bad_host}/path"
+    with pytest.raises(UnicodeError) as idna_error:
+        bad_host.encode("idna")
     search.return_value = [WebSearchHit("", f"https://example.com/{key}", "") for key in "abc"]
     search.return_value.insert(bad_position, WebSearchHit("", bad_url, ""))
 
@@ -238,7 +241,7 @@ async def test_url_validation_exception_preserves_evidence_and_continues(
     }
     assert len(result["online_errors"]) == 1
     assert bad_url in result["online_errors"][0]
-    assert "label too long" in result["online_errors"][0]
+    assert str(idna_error.value) in result["online_errors"][0]
     assert fetch.await_count == 2
     search.assert_awaited_once_with("Linux release")
 

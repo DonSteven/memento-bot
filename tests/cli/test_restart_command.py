@@ -10,7 +10,7 @@ import pytest
 
 from nanobot.agent.memory_db import MemoryContext
 from nanobot.bus.events import InboundMessage
-from nanobot.providers.base import LLMResponse
+from nanobot.providers.base import GenerationSettings, LLMResponse
 
 
 def _make_loop():
@@ -20,6 +20,7 @@ def _make_loop():
 
     bus = MessageBus()
     provider = MagicMock()
+    provider.generation = GenerationSettings()
     provider.get_default_model.return_value = "test-model"
     workspace = MagicMock()
     workspace.__truediv__ = MagicMock(return_value=MagicMock())
