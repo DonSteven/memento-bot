@@ -118,3 +118,38 @@ export interface MemorySearchResult {
   core: MemoryRecord[]
   dynamic: DynamicMemoryHit[]
 }
+
+export type KnowledgeStatus = 'sufficient' | 'insufficient' | 'retrieval_error' | 'assessment_error' | 'online_error'
+
+export interface ParentEvidence {
+  parent_id: number
+  page_id: number
+  title: string
+  url: string
+  text: string
+  partial: boolean
+  sources: string[]
+  rerank_score: number
+  rerank_rank: number
+}
+
+export interface ChildEvidence extends ParentEvidence {
+  child_id: number
+  fts_rank: number | null
+  vector_rank: number | null
+  vector_similarity: number | null
+}
+
+export interface KnowledgeResult {
+  query: string
+  status: KnowledgeStatus
+  sufficient: boolean | null
+  reason: string
+  missing_points: string[]
+  parents: ParentEvidence[]
+  children: ChildEvidence[]
+  online_attempted: boolean
+  fetched_urls: string[]
+  ingested_urls: string[]
+  online_errors: string[]
+}

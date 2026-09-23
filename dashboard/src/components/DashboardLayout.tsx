@@ -1,4 +1,4 @@
-import { Activity, ArrowUpRight, Brain, LayoutDashboard, ListTree } from 'lucide-react'
+import { Activity, ArrowUpRight, BookOpenText, Brain, LayoutDashboard, ListTree } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 
 export function DashboardLayout() {
@@ -16,6 +16,8 @@ export function DashboardLayout() {
           <ListTree size={17} />Runs</NavLink>
         <NavLink to="/memory" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
           <Brain size={17} />Memory</NavLink>
+        <NavLink to="/knowledge" className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+          <BookOpenText size={17} />Knowledge</NavLink>
       </nav>
       <div className="sidebar-bottom">
         <span className="local-indicator" /> Local instance

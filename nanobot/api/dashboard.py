@@ -8,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import httpx
 from aiohttp import web
 from loguru import logger
 
@@ -140,6 +141,33 @@ async def memory_search(request: web.Request) -> web.Response:
     })
 
 
+async def knowledge_search(request: web.Request) -> web.Response:
+    retriever = getattr(request.app[AGENT_KEY], "knowledge_retriever", None)
+    if retriever is None:
+        return error(503, "knowledge_unavailable", "Knowledge retrieval is unavailable")
+    try:
+        body = await request.json()
+    except (ValueError, web.HTTPException):
+        return error(400, "invalid_body", "Expected a JSON object")
+    if not isinstance(body, dict) or set(body) - {"query", "doc_limit", "evidence_limit"}:
+        return error(400, "invalid_body", "Expected query, doc_limit, and evidence_limit fields")
+    query = body.get("query")
+    if not isinstance(query, str) or not query.strip() or len(query) > 512:
+        return error(400, "invalid_query", "query must contain 1 to 512 characters")
+    for name in ("doc_limit", "evidence_limit"):
+        limit = body.get(name)
+        if limit is not None and (type(limit) is not int or not 1 <= limit <= 100):
+            return error(400, f"invalid_{name}", f"{name} must be an integer from 1 to 100")
+    try:
+        result = await retriever.retrieve(
+            query, doc_limit=body.get("doc_limit"), evidence_limit=body.get("evidence_limit"),
+        )
+    except (RuntimeError, TimeoutError, httpx.HTTPError):
+        logger.exception("Dashboard knowledge retrieval failed upstream")
+        return error(502, "knowledge_upstream_failed", "Knowledge retrieval service failed")
+    return web.json_response(result.to_dict())
+
+
 async def dashboard_index(request: web.Request) -> web.StreamResponse:
     index = request.app[STATIC_KEY] / "index.html"
     if not index.is_file():
@@ -173,6 +201,7 @@ def create_dashboard_app(agent_loop, cron_service, observability_store: Observab
     app.router.add_get("/api/dashboard/runs/{run_id}", run_detail)
     app.router.add_get("/api/dashboard/memory", memory)
     app.router.add_post("/api/dashboard/memory/search", memory_search)
+    app.router.add_post("/api/dashboard/knowledge/search", knowledge_search)
     app.router.add_get("/dashboard", dashboard_redirect)
     app.router.add_get("/dashboard/", dashboard_index)
     app.router.add_get("/dashboard/assets/{name:.*}", dashboard_asset)

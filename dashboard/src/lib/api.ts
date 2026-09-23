@@ -1,4 +1,4 @@
-import type { MemorySearchResult, MemorySnapshot, OverviewData, RunDetail, RunPage } from './types'
+import type { KnowledgeResult, MemorySearchResult, MemorySnapshot, OverviewData, RunDetail, RunPage } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string) {
@@ -41,5 +41,10 @@ export const dashboardApi = {
     requestJson<MemorySearchResult>('/memory/search', signal, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, limit }),
+    }),
+  searchKnowledge: (query: string, docLimit: number, evidenceLimit: number, signal: AbortSignal) =>
+    requestJson<KnowledgeResult>('/knowledge/search', signal, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, doc_limit: docLimit, evidence_limit: evidenceLimit }),
     }),
 }

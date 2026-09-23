@@ -9,6 +9,7 @@ import './styles.css'
 const Overview = lazy(() => import('./pages/Overview').then(module => ({ default: module.Overview })))
 const Runs = lazy(() => import('./pages/Runs').then(module => ({ default: module.Runs })))
 const Memory = lazy(() => import('./pages/Memory').then(module => ({ default: module.Memory })))
+const Knowledge = lazy(() => import('./pages/Knowledge').then(module => ({ default: module.Knowledge })))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -20,6 +21,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="runs" element={<Runs />} />
             <Route path="runs/:runId" element={<Runs />} />
             <Route path="memory" element={<Memory />} />
+            <Route path="knowledge" element={<Knowledge />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

@@ -1,4 +1,4 @@
-# Dashboard runtime (P1–P4)
+# Dashboard runtime (P1–P5)
 
 The gateway starts a local REST listener by default at `127.0.0.1:18790`.
 It uses the gateway's existing `AgentLoop` and `CronService`. The independent
@@ -33,8 +33,8 @@ The Runs page supports a direct link such as
 run `npm run dev` in `dashboard/`; Vite proxies `/api/dashboard` to the gateway
 on port 18790.
 
-P4 includes Overview, Runs, and Memory. Refresh manually to pick up changes
-from another process. Knowledge, Tasks, and live updates are planned for later
+P5 includes Overview, Runs, Memory, and Knowledge. Refresh manually to pick up
+changes from another process. Tasks and live updates are planned for later
 stages.
 
 The Memory page reads a committed SQLite snapshot. Refreshing it does not
@@ -48,6 +48,19 @@ can trim what an Agent actually uses. RRF scores, ranks, sources, and vector
 similarity are the service's values, not confidence percentages. A conflict or
 invalid Markdown returns 409; embedding failure returns 502; unavailable
 memory service returns 503.
+
+The Knowledge page runs retrieval only when **Run retrieval** is clicked. The
+request passes `query`, `doc_limit`, and `evidence_limit` to the gateway's active
+KnowledgeRetriever. The workflow may call the model, embedding, rerank, and
+online search/fetch APIs; online supplementation may write fetched content to
+the knowledge database. There is no automatic retry or query on page load,
+refresh, or navigation. The response is the retriever's `to_dict()` result:
+`sufficient`, `insufficient`, `retrieval_error`, `assessment_error`, and
+`online_error` are business statuses returned with HTTP 200. Available evidence,
+missing points, and online errors remain visible even when the status is an
+error. `fetched_urls` records URLs for which a fetch was attempted, whereas
+`ingested_urls` records successful ingestion. An unavailable retriever returns
+503; an unhandled upstream failure returns 502.
 
 ```bash
 curl http://127.0.0.1:18790/api/dashboard/overview
