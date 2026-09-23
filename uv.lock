@@ -1745,6 +1745,7 @@ name = "nanobot-ai"
 version = "0.1.4.post6"
 source = { editable = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "anthropic" },
     { name = "chardet" },
     { name = "croniter" },
@@ -1778,9 +1779,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-api = [
-    { name = "aiohttp" },
-]
 beir-eval = [
     { name = "beir" },
 ]
@@ -1816,7 +1814,7 @@ weixin = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiohttp", marker = "extra == 'api'", specifier = ">=3.9.0,<4.0.0" },
+    { name = "aiohttp", specifier = ">=3.9.0,<4.0.0" },
     { name = "aiohttp", marker = "extra == 'dev'", specifier = ">=3.9.0,<4.0.0" },
     { name = "anthropic", specifier = ">=0.45.0,<1.0.0" },
     { name = "beir", marker = "extra == 'beir-eval'", specifier = ">=2.0.0,<3.0.0" },
@@ -1864,7 +1862,7 @@ requires-dist = [
     { name = "websockets", specifier = ">=16.0,<17.0" },
     { name = "wecom-aibot-sdk-python", marker = "extra == 'wecom'", specifier = ">=0.1.5" },
 ]
-provides-extras = ["api", "wecom", "weixin", "matrix", "langsmith", "dev", "memory-eval", "web-knowledge", "beir-eval"]
+provides-extras = ["wecom", "weixin", "matrix", "langsmith", "dev", "memory-eval", "web-knowledge", "beir-eval"]
 
 [[package]]
 name = "networkx"

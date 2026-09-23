@@ -112,6 +112,14 @@ class GatewayConfig(Base):
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
 
 
+class DashboardConfig(Base):
+    """Local gateway Dashboard listener."""
+
+    enabled: bool = True
+    host: str = "127.0.0.1"
+    port: int = Field(default=18790, ge=1, le=65535)
+
+
 class WebSearchConfig(Base):
     """Web search tool configuration."""
 
@@ -231,6 +239,7 @@ class Config(BaseSettings): # 继承自 pydantic.BaseSettings
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
+    dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)

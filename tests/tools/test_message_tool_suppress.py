@@ -108,9 +108,9 @@ class TestMessageToolSuppressLogic:
         async def on_progress(content: str, *, tool_hint: bool = False) -> None:
             progress.append((content, tool_hint))
 
-        final_content, _, _ = await loop._run_agent_loop([], on_progress=on_progress)
+        run_result = await loop._run_agent_loop([], on_progress=on_progress)
 
-        assert final_content == "Done"
+        assert run_result.final_content == "Done"
         assert progress == [
             ("Visible", False),
             ('read_file("foo.txt")', True),

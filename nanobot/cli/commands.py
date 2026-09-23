@@ -509,11 +509,7 @@ def serve(
     config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
 ):
     """Start the OpenAI-compatible API server (/v1/chat/completions)."""
-    try:
-        from aiohttp import web  # noqa: F401
-    except ImportError:
-        console.print("[red]aiohttp is required. Install with: pip install 'nanobot-ai[api]'[/red]")
-        raise typer.Exit(1)
+    from aiohttp import web  # noqa: F401
 
     from loguru import logger
     from nanobot.agent.loop import AgentLoop
@@ -586,6 +582,66 @@ def serve(
 # ============================================================================
 # Gateway / Server
 # ============================================================================
+
+async def _start_dashboard_listener(agent, cron, config):
+    """Bind the optional Dashboard; a failure must not stop the gateway."""
+    if not config.dashboard.enabled:
+        return None
+    from aiohttp import web
+    from loguru import logger
+    from nanobot.api.dashboard import create_dashboard_app
+
+    runner = None
+    try:
+        await asyncio.to_thread(agent.observability_store.initialize)
+        app = create_dashboard_app(agent, cron, agent.observability_store,
+                                   host=config.dashboard.host)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, config.dashboard.host, config.dashboard.port)
+        await site.start()
+        logger.info("Dashboard listening at http://{}:{}/api/dashboard/overview",
+                    config.dashboard.host, config.dashboard.port)
+        return runner
+    except Exception:
+        logger.exception("Dashboard unavailable; gateway will continue")
+        if runner is not None:
+            await runner.cleanup()
+        return None
+
+
+async def _run_gateway_services(agent, cron, heartbeat, channels, config):
+    """Run and clean up all services owned by one gateway process."""
+    from loguru import logger
+
+    dashboard_runner = None
+    try:
+        dashboard_runner = await _start_dashboard_listener(agent, cron, config)
+        await cron.start()
+        await heartbeat.start()
+        await asyncio.gather(agent.run(), channels.start_all())
+    except KeyboardInterrupt:
+        console.print("\nShutting down...")
+    except Exception:
+        logger.exception("Gateway crashed unexpectedly")
+        console.print("\n[red]Error: Gateway crashed unexpectedly[/red]")
+    finally:
+        heartbeat.stop()
+        cron.stop()
+        agent.stop()
+        try:
+            await channels.stop_all()
+        finally:
+            active = [task for tasks in agent._active_tasks.values() for task in tasks]
+            for task in active:
+                task.cancel()
+            if active:
+                await asyncio.gather(*active, return_exceptions=True)
+            try:
+                if dashboard_runner is not None:
+                    await dashboard_runner.cleanup()
+            finally:
+                await agent.close_mcp()
 
 
 @app.command()
@@ -770,28 +826,7 @@ def gateway(
 
     console.print(f"[green]✓[/green] Heartbeat: every {hb_cfg.interval_s}s")
 
-    async def run():
-        try:
-            await cron.start()
-            await heartbeat.start()
-            await asyncio.gather(
-                agent.run(),
-                channels.start_all(),
-            )
-        except KeyboardInterrupt:
-            console.print("\nShutting down...")
-        except Exception:
-            import traceback
-            console.print("\n[red]Error: Gateway crashed unexpectedly[/red]")
-            console.print(traceback.format_exc())
-        finally:
-            await agent.close_mcp()
-            heartbeat.stop()
-            cron.stop()
-            agent.stop()
-            await channels.stop_all()
-
-    asyncio.run(run())
+    asyncio.run(_run_gateway_services(agent, cron, heartbeat, channels, config))
 
 
 

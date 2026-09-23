@@ -1347,6 +1347,11 @@ Example config:
   },
   "gateway": {
     "port": 18790
+  },
+  "dashboard": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 18790
   }
 }
 ```
@@ -1473,7 +1478,7 @@ See [docs/PYTHON_SDK.md](PYTHON_SDK.md) for the full SDK reference.
 Memento Bot can expose a minimal OpenAI-compatible endpoint for local integrations:
 
 ```bash
-python -m pip install -e '.[web_knowledge,api]'
+python -m pip install -e '.[web_knowledge]'
 nanobot serve
 ```
 

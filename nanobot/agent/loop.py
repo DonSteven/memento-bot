@@ -6,7 +6,7 @@ import asyncio
 import json
 import os
 import time
-from contextlib import AsyncExitStack, nullcontext
+from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
@@ -21,10 +21,10 @@ from nanobot.agent.memory import MemoryConsolidator
 from nanobot.agent.memory_db import MemoryContext
 from nanobot.agent.memory_service import MemoryService
 from nanobot.agent.memory_sync import MarkdownValidationError, MemoryConflictError
-from nanobot.agent.runner import AgentRunSpec, AgentRunner
+from nanobot.agent.runner import AgentRunner, AgentRunResult, AgentRunSpec
+from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
-from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.knowledge import KnowledgeSearchTool
 from nanobot.agent.tools.message import MessageTool
@@ -33,13 +33,21 @@ from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
-from nanobot.command import CommandContext, CommandRouter, register_builtin_commands
 from nanobot.bus.queue import MessageBus
+from nanobot.command import CommandContext, CommandRouter, register_builtin_commands
+from nanobot.observability.hook import ObservabilityHook, preview
+from nanobot.observability.store import ObservabilityStore, new_run_id, utc_now
 from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, KnowledgeConfig, MemoryConfig, WebSearchConfig
+    from nanobot.config.schema import (
+        ChannelsConfig,
+        ExecToolConfig,
+        KnowledgeConfig,
+        MemoryConfig,
+        WebSearchConfig,
+    )
     from nanobot.cron.service import CronService
 
 
@@ -185,6 +193,7 @@ class AgentLoop:
         memory_config: MemoryConfig | None = None,
         memory_api_key: str | None = None,
         memory_service: MemoryService | None = None,
+        observability_store: ObservabilityStore | None = None,
     ):
         from nanobot.config.schema import (
             ExecToolConfig,
@@ -220,6 +229,11 @@ class AgentLoop:
         self.memory_service = memory_service or MemoryService(
             workspace, provider, self.model, config=self.memory_config, api_key=memory_api_key
         )
+        self.observability_store = observability_store or ObservabilityStore(
+            workspace / "observability" / "dashboard.db"
+        )
+        self._observability_init_lock = asyncio.Lock()
+        self._observability_initialized = False
         self.sessions = session_manager or SessionManager(workspace)
         self.tools = ToolRegistry()
         self.runner = AgentRunner(provider)
@@ -360,6 +374,91 @@ class AgentLoop:
             return f'{tc.name}("{val[:40]}…")' if len(val) > 40 else f'{tc.name}("{val}")'
         return ", ".join(_fmt(tc) for tc in tool_calls)
 
+    async def _observe(self, method: str, *args: Any) -> bool:
+        """Persist without changing Agent behavior, including under cancellation."""
+        task = asyncio.create_task(asyncio.to_thread(
+            getattr(self.observability_store, method), *args
+        ))
+        try:
+            await asyncio.shield(task)
+            return True
+        except asyncio.CancelledError:
+            try:
+                await task  # Let an already-started write finish before the terminal write.
+            except Exception:
+                logger.exception("Observability {} failed during cancellation", method)
+            raise
+        except Exception:
+            logger.exception("Observability {} failed", method)
+            return False
+
+    async def _initialize_observability(self) -> bool:
+        if self._observability_initialized:
+            return True
+        async with self._observability_init_lock:
+            if not self._observability_initialized:
+                self._observability_initialized = await self._observe("initialize")
+        return self._observability_initialized
+
+    @asynccontextmanager
+    async def _trace_run(self, session_key: str, channel: str):
+        run_id = new_run_id()
+        started = time.perf_counter()
+        try:
+            active = await self._initialize_observability()
+            active = await self._observe("start_run", run_id, session_key, channel, self.model) if active else False
+        except asyncio.CancelledError:
+            await self._observe("finish_run", run_id, "cancelled", "cancelled",
+                                (time.perf_counter() - started) * 1000, "Cancelled")
+            raise
+        state: dict[str, Any] = {
+            "hook": ObservabilityHook(self.observability_store, run_id) if active else None,
+            "run_id": run_id if active else None,
+            "result": None,
+        }
+        try:
+            yield state
+        except BaseException as exc:
+            if active:
+                hook = state["hook"]
+                await hook.drain()
+                status = "cancelled" if isinstance(exc, asyncio.CancelledError) else "error"
+                await self._observe("add_event", run_id, "error",
+                                    {"error": preview(str(exc), 1024)})
+                await self._observe("finish_run", run_id, status, status,
+                                    (time.perf_counter() - started) * 1000,
+                                    preview(str(exc), 1024)["text"])
+            raise
+        else:
+            if active:
+                result: AgentRunResult | None = state["result"]
+                reason = result.stop_reason if result else "error"
+                status = ("completed" if reason == "completed" else
+                          "stopped" if reason in {"max_iterations", "context_limit"} else "error")
+                await self._observe("finish_run", run_id, status, reason,
+                                    (time.perf_counter() - started) * 1000,
+                                    preview(result.error, 1024)["text"] if result and result.error else None)
+
+    async def _prepare_observed_memory(self, query: str, trace: dict[str, Any]):
+        started_at = utc_now()
+        started = time.perf_counter()
+        try:
+            context = await self.memory_service.prepare_context(query)
+        except BaseException as exc:
+            if trace["run_id"]:
+                await self._observe("add_event", trace["run_id"], "memory",
+                                    {"error": preview(str(exc), 1024)}, None,
+                                    (time.perf_counter() - started) * 1000, started_at)
+            raise
+        if trace["run_id"]:
+            core = context.core_items
+            retrieved = context.retrieved_items
+            await self._observe("add_event", trace["run_id"], "memory",
+                                {"core_count": len(core) if core is not None else 0,
+                                 "retrieved_count": len(retrieved) if retrieved is not None else 0},
+                                None, (time.perf_counter() - started) * 1000, started_at)
+        return context
+
     async def _run_agent_loop(
         self,
         initial_messages: list[dict],
@@ -371,7 +470,8 @@ class AgentLoop:
         channel: str = "cli",
         chat_id: str = "direct",
         message_id: str | None = None,
-    ) -> tuple[str | None, list[str], list[dict]]:
+        observability_hook: ObservabilityHook | None = None,
+    ) -> AgentRunResult:
         """Run the agent iteration loop.
 
         *on_stream*: called with each content delta during streaming.
@@ -389,6 +489,8 @@ class AgentLoop:
             message_id=message_id,
         )
         chained_hooks = [*self._system_hooks, *self._extra_hooks]
+        if observability_hook is not None:
+            chained_hooks.append(observability_hook)
         hook: AgentHook = _LoopHookChain(loop_hook, chained_hooks) if chained_hooks else loop_hook
 
         result = await self.runner.run(
@@ -405,12 +507,11 @@ class AgentLoop:
             )
         )
         self._last_usage = result.usage
-        self._last_stop_reason = result.stop_reason
         if result.stop_reason == "max_iterations":
             logger.warning("Max iterations ({}) reached", self.max_iterations)
         elif result.stop_reason == "error":
             logger.error("LLM returned error: {}", (result.final_content or "")[:200])
-        return result.final_content, result.tools_used, result.messages
+        return result
 
     async def run(self) -> None:
         """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
@@ -567,42 +668,46 @@ class AgentLoop:
             logger.info("Processing system message from {}", msg.sender_id)
             key = f"{channel}:{chat_id}"
             session = self.sessions.get_or_create(key)
-            memory_context = await self.memory_service.prepare_context(msg.content)
-            memory_context = self._fit_turn_memory(memory_context, msg, channel, chat_id)
-            memory_context = await self.memory_consolidator.maybe_consolidate_by_tokens(
-                session, memory_context, query=msg.content, current_message=msg.content,
-            )
-            self._set_tool_context(channel, chat_id, msg.metadata.get("message_id"))
-            history = session.get_history(max_messages=0)
-            current_role = "assistant" if msg.sender_id == "subagent" else "user"
-            messages = self.context.build_messages(
-                history=history,
-                current_message=msg.content, channel=channel, chat_id=chat_id,
-                current_role=current_role,
-                memory_context=memory_context,
-            )
-            final_content, _, all_msgs = await self._run_agent_loop(
-                messages,
-                memory_context=memory_context,
-                channel=channel,
-                chat_id=chat_id,
-                message_id=msg.metadata.get("message_id"),
-            )
-            self._save_turn(session, all_msgs, 1 + len(history))
-            self.sessions.save(session)
-            self._schedule_background(
-                self.memory_consolidator.maybe_consolidate_by_tokens(
-                    session,
-                    memory_context,
-                    query=msg.content,
+            async with self._trace_run(key, channel) as trace:
+                memory_context = await self._prepare_observed_memory(msg.content, trace)
+                memory_context = self._fit_turn_memory(memory_context, msg, channel, chat_id)
+                memory_context = await self.memory_consolidator.maybe_consolidate_by_tokens(
+                    session, memory_context, query=msg.content, current_message=msg.content,
                 )
-            )
-            return OutboundMessage(
-                channel=channel,
-                chat_id=chat_id,
-                content=final_content or "Background task completed.",
-                metadata={"stop_reason": getattr(self, "_last_stop_reason", "completed")},
-            )
+                self._set_tool_context(channel, chat_id, msg.metadata.get("message_id"))
+                history = session.get_history(max_messages=0)
+                current_role = "assistant" if msg.sender_id == "subagent" else "user"
+                messages = self.context.build_messages(
+                    history=history,
+                    current_message=msg.content, channel=channel, chat_id=chat_id,
+                    current_role=current_role,
+                    memory_context=memory_context,
+                )
+                result = await self._run_agent_loop(
+                    messages,
+                    memory_context=memory_context,
+                    channel=channel,
+                    chat_id=chat_id,
+                    message_id=msg.metadata.get("message_id"),
+                    observability_hook=trace["hook"],
+                )
+                trace["result"] = result
+                final_content = result.final_content
+                self._save_turn(session, result.messages, 1 + len(history))
+                self.sessions.save(session)
+                self._schedule_background(
+                    self.memory_consolidator.maybe_consolidate_by_tokens(
+                        session,
+                        memory_context,
+                        query=msg.content,
+                    )
+                )
+                return OutboundMessage(
+                    channel=channel,
+                    chat_id=chat_id,
+                    content=final_content or "Background task completed.",
+                    metadata={"stop_reason": result.stop_reason},
+                )
 
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
@@ -616,67 +721,71 @@ class AgentLoop:
         if result := await self.commands.dispatch(ctx):
             return result
 
-        memory_context = await self.memory_service.prepare_context(msg.content)
-        memory_context = self._fit_turn_memory(memory_context, msg, msg.channel, msg.chat_id)
-        memory_context = await self.memory_consolidator.maybe_consolidate_by_tokens(
-            session, memory_context, query=msg.content, current_message=msg.content,
-        )
+        async with self._trace_run(key, msg.channel) as trace:
+            memory_context = await self._prepare_observed_memory(msg.content, trace)
+            memory_context = self._fit_turn_memory(memory_context, msg, msg.channel, msg.chat_id)
+            memory_context = await self.memory_consolidator.maybe_consolidate_by_tokens(
+                session, memory_context, query=msg.content, current_message=msg.content,
+            )
 
-        self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"))
-        if message_tool := self.tools.get("message"):
-            if isinstance(message_tool, MessageTool):
-                message_tool.start_turn()
+            self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"))
+            if message_tool := self.tools.get("message"):
+                if isinstance(message_tool, MessageTool):
+                    message_tool.start_turn()
 
-        history = session.get_history(max_messages=0)
-        initial_messages = self.context.build_messages(
-            history=history,
-            current_message=msg.content,
-            media=msg.media if msg.media else None,
-            channel=msg.channel, chat_id=msg.chat_id,
-            memory_context=memory_context,
-        )
+            history = session.get_history(max_messages=0)
+            initial_messages = self.context.build_messages(
+                history=history,
+                current_message=msg.content,
+                media=msg.media if msg.media else None,
+                channel=msg.channel, chat_id=msg.chat_id,
+                memory_context=memory_context,
+            )
 
-        async def _bus_progress(content: str, *, tool_hint: bool = False) -> None:
-            meta = dict(msg.metadata or {})
-            meta["_progress"] = True
-            meta["_tool_hint"] = tool_hint
-            await self.bus.publish_outbound(OutboundMessage(
-                channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=meta,
+            async def _bus_progress(content: str, *, tool_hint: bool = False) -> None:
+                meta = dict(msg.metadata or {})
+                meta["_progress"] = True
+                meta["_tool_hint"] = tool_hint
+                await self.bus.publish_outbound(OutboundMessage(
+                    channel=msg.channel, chat_id=msg.chat_id, content=content, metadata=meta,
+                ))
+
+            result = await self._run_agent_loop(
+                initial_messages,
+                memory_context=memory_context,
+                on_progress=on_progress or _bus_progress,
+                on_stream=on_stream,
+                on_stream_end=on_stream_end,
+                channel=msg.channel, chat_id=msg.chat_id,
+                message_id=msg.metadata.get("message_id"),
+                observability_hook=trace["hook"],
+            )
+
+            trace["result"] = result
+            final_content = result.final_content
+            if final_content is None:
+                final_content = "I've completed processing but have no response to give."
+
+            self._save_turn(session, result.messages, 1 + len(history))
+            self.sessions.save(session)
+            self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(
+                session, memory_context, query=msg.content,
             ))
 
-        final_content, _, all_msgs = await self._run_agent_loop(
-            initial_messages,
-            memory_context=memory_context,
-            on_progress=on_progress or _bus_progress,
-            on_stream=on_stream,
-            on_stream_end=on_stream_end,
-            channel=msg.channel, chat_id=msg.chat_id,
-            message_id=msg.metadata.get("message_id"),
-        )
+            if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
+                return None
 
-        if final_content is None:
-            final_content = "I've completed processing but have no response to give."
+            preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
+            logger.info("Response to {}:{}: {}", msg.channel, msg.sender_id, preview)
 
-        self._save_turn(session, all_msgs, 1 + len(history))
-        self.sessions.save(session)
-        self._schedule_background(self.memory_consolidator.maybe_consolidate_by_tokens(
-            session, memory_context, query=msg.content,
-        ))
-
-        if (mt := self.tools.get("message")) and isinstance(mt, MessageTool) and mt._sent_in_turn:
-            return None
-
-        preview = final_content[:120] + "..." if len(final_content) > 120 else final_content
-        logger.info("Response to {}:{}: {}", msg.channel, msg.sender_id, preview)
-
-        meta = dict(msg.metadata or {})
-        meta["stop_reason"] = getattr(self, "_last_stop_reason", "completed")
-        if on_stream is not None:
-            meta["_streamed"] = True
-        return OutboundMessage(
-            channel=msg.channel, chat_id=msg.chat_id, content=final_content,
-            metadata=meta,
-        )
+            meta = dict(msg.metadata or {})
+            meta["stop_reason"] = result.stop_reason
+            if on_stream is not None:
+                meta["_streamed"] = True
+            return OutboundMessage(
+                channel=msg.channel, chat_id=msg.chat_id, content=final_content,
+                metadata=meta,
+            )
 
     @staticmethod
     def _image_placeholder(block: dict[str, Any]) -> dict[str, str]:
