@@ -1,4 +1,4 @@
-# Dashboard runtime (P1–P2)
+# Dashboard runtime (P1–P4)
 
 The gateway starts a local REST listener by default at `127.0.0.1:18790`.
 It uses the gateway's existing `AgentLoop` and `CronService`. The independent
@@ -16,10 +16,44 @@ initialization fails, the gateway continues. A request whose store is unavailabl
 returns HTTP 503. Use a different Dashboard port for each gateway process on
 the same host. The listener has no login and is intended for local use.
 
+## Build and open the UI
+
+Use Node 20.19 or newer within the Node 20 line. From the repository root:
+
+```bash
+cd dashboard
+npm ci
+npm run build
+```
+
+Start `nanobot gateway`, then open `http://127.0.0.1:18790/dashboard/`.
+The Runs page supports a direct link such as
+`http://127.0.0.1:18790/dashboard/#/runs/RUN_ID`. If the UI has not been built,
+`/dashboard/` returns 503 while REST stays available. For local UI development,
+run `npm run dev` in `dashboard/`; Vite proxies `/api/dashboard` to the gateway
+on port 18790.
+
+P4 includes Overview, Runs, and Memory. Refresh manually to pick up changes
+from another process. Knowledge, Tasks, and live updates are planned for later
+stages.
+
+The Memory page reads a committed SQLite snapshot. Refreshing it does not
+synchronize Markdown or call the embedding provider. It shows the revision,
+counts for all six classes, and records. Retrieval debug runs only when Search
+is clicked: it synchronizes `MEMORY.md`, reads core memories, then calls the
+existing hybrid dynamic search. Synchronization may write memory and invoke
+the embedding provider. The requested limit is capped by the service's
+`dynamic_top_k`. Dynamic hits are recall candidates; later token budgeting
+can trim what an Agent actually uses. RRF scores, ranks, sources, and vector
+similarity are the service's values, not confidence percentages. A conflict or
+invalid Markdown returns 409; embedding failure returns 502; unavailable
+memory service returns 503.
+
 ```bash
 curl http://127.0.0.1:18790/api/dashboard/overview
 curl 'http://127.0.0.1:18790/api/dashboard/runs?limit=50'
 curl http://127.0.0.1:18790/api/dashboard/runs/RUN_ID
+curl http://127.0.0.1:18790/api/dashboard/memory
 ```
 
 The runs endpoint returns `items` and `next_cursor`. Pass the cursor unchanged
