@@ -42,6 +42,7 @@ a { color: inherit; text-decoration: none; }
 .topbar-title { font-family: var(--mono); font-size: 10px; color: #5b6d6c; font-weight: 700; letter-spacing: .1em; }
 .topbar-title span { padding: 0 8px; color: #b8c5c2; }
 .topbar-note { color: #8b9a98; font-size: 11px; }
+.live-disconnected { padding: 8px 27px; background: #fff4e7; color: #92591d; font-size: 11px; }
 .page-content { padding: 28px; max-width: 1650px; margin: 0 auto; }
 .page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 27px; }
 .eyebrow { display: block; margin-bottom: 8px; color: var(--accent); font: 700 10px var(--mono); letter-spacing: .11em; text-transform: uppercase; }

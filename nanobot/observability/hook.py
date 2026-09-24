@@ -10,6 +10,7 @@ from typing import Any
 from loguru import logger
 
 from nanobot.agent.hook import AgentHook, AgentHookContext
+from nanobot.observability.events import DashboardEvents
 from nanobot.observability.store import ObservabilityStore, utc_now
 
 _SECRET_KEYS = {"api_key", "apikey", "token", "password", "secret", "authorization",
@@ -36,9 +37,11 @@ def preview(value: Any, max_bytes: int = 4096) -> dict[str, Any]:
 
 
 class ObservabilityHook(AgentHook):
-    def __init__(self, store: ObservabilityStore, run_id: str):
+    def __init__(self, store: ObservabilityStore, run_id: str,
+                 events: DashboardEvents | None = None):
         self.store = store
         self.run_id = run_id
+        self.events = events
         self._model_started: dict[int, tuple[str, float]] = {}
         self._tools_started: dict[int, tuple[str, float]] = {}
         self._model_recorded: set[int] = set()
@@ -50,6 +53,11 @@ class ObservabilityHook(AgentHook):
         task.add_done_callback(self._pending.discard)
         try:
             await asyncio.shield(task)
+            if self.events is not None:
+                try:
+                    self.events.publish("run.updated", run_id=self.run_id)
+                except Exception:
+                    logger.exception("Dashboard event broadcast failed")
         except asyncio.CancelledError:
             raise
         except Exception:

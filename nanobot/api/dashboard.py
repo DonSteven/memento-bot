@@ -14,6 +14,7 @@ from loguru import logger
 
 from nanobot.agent.memory_db import MEMORY_CLASSES, MemoryRevisionConflictError
 from nanobot.agent.memory_sync import MarkdownValidationError, MemoryConflictError
+from nanobot.observability.events import DashboardEvents
 from nanobot.observability.store import ObservabilityStore
 
 AGENT_KEY = web.AppKey("agent_loop", object)
@@ -21,6 +22,8 @@ CRON_KEY = web.AppKey("cron_service", object)
 STORE_KEY = web.AppKey("observability_store", ObservabilityStore)
 HOSTS_KEY = web.AppKey("allowed_hosts", set)
 STATIC_KEY = web.AppKey("static_dir", Path)
+EVENTS_KEY = web.AppKey("dashboard_events", DashboardEvents)
+SOCKETS_KEY = web.AppKey("dashboard_sockets", set)
 
 
 def error(status: int, code: str, message: str) -> web.Response:
@@ -200,6 +203,44 @@ async def task_delete(request: web.Request) -> web.Response:
     return web.Response(status=204)
 
 
+async def dashboard_events(request: web.Request) -> web.StreamResponse:
+    ws = web.WebSocketResponse(heartbeat=30)
+    await ws.prepare(request)
+    request.app[SOCKETS_KEY].add(ws)
+    events = request.app[EVENTS_KEY]
+    queue = events.subscribe()
+
+    async def send_events() -> None:
+        while True:
+            event = await queue.get()
+            if event is None:
+                return
+            await asyncio.wait_for(ws.send_json(event), timeout=5)
+
+    async def read_socket() -> None:
+        async for _ in ws:
+            pass
+
+    sender = asyncio.create_task(send_events())
+    reader = asyncio.create_task(read_socket())
+    try:
+        await asyncio.wait((sender, reader), return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        sender.cancel()
+        reader.cancel()
+        await asyncio.gather(sender, reader, return_exceptions=True)
+        events.unsubscribe(queue)
+        request.app[SOCKETS_KEY].discard(ws)
+        await ws.close()
+    return ws
+
+
+async def close_dashboard_events(app: web.Application) -> None:
+    app[EVENTS_KEY].close()
+    await asyncio.gather(*(ws.close() for ws in tuple(app[SOCKETS_KEY])),
+                         return_exceptions=True)
+
+
 async def dashboard_index(request: web.Request) -> web.StreamResponse:
     index = request.app[STATIC_KEY] / "index.html"
     if not index.is_file():
@@ -221,13 +262,17 @@ async def dashboard_asset(request: web.Request) -> web.StreamResponse:
 
 def create_dashboard_app(agent_loop, cron_service, observability_store: ObservabilityStore,
                          *, host: str = "127.0.0.1",
-                         static_dir: Path | None = None) -> web.Application:
+                         static_dir: Path | None = None,
+                         events: DashboardEvents | None = None) -> web.Application:
     app = web.Application(middlewares=[guard], client_max_size=16 * 1024)
     app[AGENT_KEY] = agent_loop
     app[CRON_KEY] = cron_service
     app[STORE_KEY] = observability_store
     app[HOSTS_KEY] = {"127.0.0.1", "localhost", "::1", host}
-    app[STATIC_KEY] = static_dir or Path(__file__).resolve().parents[2] / "dashboard" / "dist"
+    app[STATIC_KEY] = static_dir or Path(__file__).resolve().parent / "dashboard_static"
+    app[EVENTS_KEY] = events or DashboardEvents()
+    app[SOCKETS_KEY] = set()
+    app.on_shutdown.append(close_dashboard_events)
     app.router.add_get("/api/dashboard/overview", overview)
     app.router.add_get("/api/dashboard/runs", runs)
     app.router.add_get("/api/dashboard/runs/{run_id}", run_detail)
@@ -237,6 +282,7 @@ def create_dashboard_app(agent_loop, cron_service, observability_store: Observab
     app.router.add_get("/api/dashboard/tasks", tasks)
     app.router.add_patch("/api/dashboard/tasks/{job_id}", task_update)
     app.router.add_delete("/api/dashboard/tasks/{job_id}", task_delete)
+    app.router.add_get("/api/dashboard/events", dashboard_events)
     app.router.add_get("/dashboard", dashboard_redirect)
     app.router.add_get("/dashboard/", dashboard_index)
     app.router.add_get("/dashboard/assets/{name:.*}", dashboard_asset)

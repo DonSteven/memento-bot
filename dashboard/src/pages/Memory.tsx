@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { RefreshCw, Search } from 'lucide-react'
 
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
+import { useLiveUpdates } from '../components/LiveUpdates'
 import { Button } from '../components/ui/button'
 import { dashboardApi, ApiError } from '../lib/api'
 import type { DynamicMemoryHit, MemoryClass, MemoryRecord, MemorySearchResult, MemorySnapshot } from '../lib/types'
@@ -38,6 +39,7 @@ function HitCard({ hit }: { hit: DynamicMemoryHit }) {
 }
 
 export function Memory() {
+  const { versions } = useLiveUpdates()
   const [snapshot, setSnapshot] = useState<MemorySnapshot | null>(null)
   const [category, setCategory] = useState<MemoryClass | 'all'>('all')
   const [loading, setLoading] = useState(true)
@@ -62,7 +64,7 @@ export function Memory() {
       if (!controller.signal.aborted) setLoading(false)
     })
     return () => controller.abort()
-  }, [reload])
+  }, [reload, versions.memory])
 
   useEffect(() => () => searchController.current?.abort(), [])
 

@@ -124,6 +124,22 @@ With knowledge enabled, ask the agent to use `kb_search` for a question requirin
 
 For an existing workspace, follow [conversion and switching](spec/MEMORY_KNOWLEDGE_UPGRADE.md) before starting the runtime. For channels, MCP, Docker, services and other providers, use the [configuration and operations reference](docs/CONFIGURATION.md). The [SDK guide](docs/PYTHON_SDK.md) covers programmatic use.
 
+## Local Dashboard
+
+The gateway serves a local Dashboard at `http://127.0.0.1:18790/dashboard/`
+by default. It shows Agent runs, persistent memory, knowledge retrieval
+diagnostics, and scheduled tasks. Build the UI with Node 20.19+ before opening
+it from a source checkout or creating an installable package:
+
+```bash
+cd dashboard && npm ci && npm run build
+```
+
+Live updates cover changes in that gateway process; use Refresh for writes from
+another process. The listener has no login and binds to localhost by default.
+See [Dashboard runtime](docs/DASHBOARD_RUNTIME.md) for configuration, data
+semantics, build steps, and side effects of manual searches.
+
 ## Project Structure
 
 | Path | Responsibility |

@@ -1,4 +1,4 @@
-# Dashboard runtime (P1–P6)
+# Dashboard runtime (V1)
 
 The gateway starts a local REST listener by default at `127.0.0.1:18790`.
 It uses the gateway's existing `AgentLoop` and `CronService`. The independent
@@ -26,6 +26,12 @@ npm ci
 npm run build
 ```
 
+The build writes `nanobot/api/dashboard_static`. Build before creating a
+wheel/sdist or doing a non-editable source install; both package formats include
+those built files. In an editable checkout, build before opening the UI.
+`npm ci` does not use paid services. Docker builds the UI before its final
+Python install. The generated directory and `node_modules` are not committed.
+
 Start `nanobot gateway`, then open `http://127.0.0.1:18790/dashboard/`.
 The Runs page supports a direct link such as
 `http://127.0.0.1:18790/dashboard/#/runs/RUN_ID`. If the UI has not been built,
@@ -33,8 +39,13 @@ The Runs page supports a direct link such as
 run `npm run dev` in `dashboard/`; Vite proxies `/api/dashboard` to the gateway
 on port 18790.
 
-P6 includes Overview, Runs, Memory, Knowledge, and Tasks. Refresh manually to
-pick up changes from another process. Live updates are planned for a later stage.
+The UI includes Overview, Runs, Memory, Knowledge, and Tasks. One WebSocket
+connection receives content-free invalidations for committed Agent run writes
+and task changes in the gateway process. It refreshes only the relevant GET
+views, and coalesces nearby events. When disconnected, the page keeps its
+loaded data, shows a warning, and offers manual Refresh. Reconnection rereads
+the current REST views. Changes from a separate CLI or API process are visible
+after manual refresh; there is no cross-process event bus.
 
 The Memory page reads a committed SQLite snapshot. Refreshing it does not
 synchronize Markdown or call the embedding provider. It shows the revision,
@@ -67,7 +78,14 @@ jobs. Enabling recalculates the next run; disabling prevents future scheduling
 but does not cancel a task already running. Deleting removes the schedule and
 its history after confirmation. Task changes are saved to the existing
 `jobs.json`; there is no separate Dashboard task store. Use Refresh to pick up
-changes made by the cron tool or another process.
+changes made by another process. Changes by the gateway's cron tool and
+scheduler update this page automatically.
+
+The event endpoint is `/api/dashboard/events` (WebSocket, same origin). It
+sends `run.started`, `run.updated`, `run.finished`, or `task.changed` with only
+the relevant `run_id` or `job_id`. Slow subscribers are closed; clients read
+current state again through REST. Memory and Knowledge search POST requests
+are never replayed after an event or reconnect.
 
 ```bash
 curl http://127.0.0.1:18790/api/dashboard/overview

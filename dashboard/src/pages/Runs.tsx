@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
+import { useLiveUpdates } from '../components/LiveUpdates'
 import { StatusBadge } from '../components/StatusBadge'
 import { TraceTree } from '../components/TraceTree'
 import { Button } from '../components/ui/button'
@@ -11,6 +12,7 @@ import { formatDuration, formatTime, shortId } from '../lib/format'
 import type { Run, RunDetail } from '../lib/types'
 
 export function Runs() {
+  const { versions } = useLiveUpdates()
   const { runId } = useParams<{ runId: string }>()
   const [items, setItems] = useState<Run[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
@@ -36,7 +38,7 @@ export function Runs() {
       if (!controller.signal.aborted) setLoading(false)
     })
     return () => { controller.abort(); moreController.current?.abort() }
-  }, [reload])
+  }, [reload, versions.runs])
 
   async function loadMore() {
     if (!cursor || loadingMore) return
@@ -85,7 +87,7 @@ export function Runs() {
           {loadingMore ? 'Loading…' : 'Load more'}</Button></div>}
       </section>
       <section className="panel run-detail" aria-label="Run details">
-        {runId ? <RunDetailPanel key={runId} runId={runId} reload={reload} /> :
+        {runId ? <RunDetailPanel key={runId} runId={runId} reload={reload + versions.runs} /> :
           <div className="detail-placeholder">Select a run to inspect its trace.</div>}
       </section>
     </div>

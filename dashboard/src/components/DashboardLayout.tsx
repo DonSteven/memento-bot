@@ -1,7 +1,13 @@
 import { Activity, ArrowUpRight, BookOpenText, Brain, CalendarClock, LayoutDashboard, ListTree } from 'lucide-react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
+import { LiveUpdatesProvider, useLiveUpdates } from './LiveUpdates'
 
 export function DashboardLayout() {
+  return <LiveUpdatesProvider><DashboardFrame /></LiveUpdatesProvider>
+}
+
+function DashboardFrame() {
+  const { status } = useLiveUpdates()
   return <div className="app-shell">
     <aside className="sidebar">
       <Link className="brand" to="/" aria-label="Memento Dashboard home">
@@ -29,8 +35,10 @@ export function DashboardLayout() {
     <div className="app-main">
       <header className="topbar">
         <span className="topbar-title">DASHBOARD <span>/</span> V1</span>
-        <span className="topbar-note">Local observability</span>
+        <span className="topbar-note">{status === 'connected' ? 'Live updates connected' :
+          status === 'disconnected' ? 'Live updates disconnected · Refresh manually' : 'Connecting live updates…'}</span>
       </header>
+      {status === 'disconnected' && <div className="live-disconnected" role="status">Live updates disconnected. Use Refresh; reconnecting automatically.</div>}
       <main className="page-content" id="main-content"><Outlet /></main>
     </div>
   </div>

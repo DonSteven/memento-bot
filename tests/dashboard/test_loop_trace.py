@@ -155,3 +155,17 @@ async def test_system_message_is_traced_but_command_is_not(tmp_path):
     store = ObservabilityStore(path)
     assert store.list_runs()["items"][0]["session_key"] == "cli:test"
     await loop.close_mcp()
+
+
+@pytest.mark.asyncio
+async def test_broadcast_failure_keeps_agent_response(tmp_path):
+    loop = make_loop(tmp_path, [LLMResponse(content="done")])
+
+    class BrokenEvents:
+        def publish(self, *_args, **_kwargs):
+            raise RuntimeError("subscriber failed")
+
+    loop.observability_events = BrokenEvents()
+    assert (await loop.process_direct("hello", session_key="cli:test")).content == "done"
+    assert loop.observability_store.list_runs()["items"][0]["status"] == "completed"
+    await loop.close_mcp()

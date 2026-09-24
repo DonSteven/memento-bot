@@ -69,9 +69,11 @@ class CronService:
         self,
         store_path: Path,
         on_job: Callable[[CronJob], Coroutine[Any, Any, str | None]] | None = None,
+        on_change: Callable[[str], None] | None = None,
     ):
         self.store_path = store_path
         self.on_job = on_job
+        self.on_change = on_change
         self._store: CronStore | None = None
         self._last_mtime: float = 0.0
         self._timer_task: asyncio.Task | None = None
@@ -191,13 +193,22 @@ class CronService:
 
         self.store_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
         self._last_mtime = self.store_path.stat().st_mtime
-    
+
+    def _notify_changed(self, job_id: str) -> None:
+        if self.on_change is not None:
+            try:
+                self.on_change(job_id)
+            except Exception:
+                logger.exception("Cron change notification failed")
+
     async def start(self) -> None:
         """Start the cron service."""
         self._running = True
         self._load_store()
         self._recompute_next_runs()
         self._save_store()
+        for job in self._store.jobs:
+            self._notify_changed(job.id)
         self._arm_timer()
         logger.info("Cron service started with {} jobs", len(self._store.jobs if self._store else []))
 
@@ -260,6 +271,8 @@ class CronService:
             await self._execute_job(job)
 
         self._save_store()
+        for job in due_jobs:
+            self._notify_changed(job.id)
         self._arm_timer()
 
     async def _execute_job(self, job: CronJob) -> None:
@@ -346,6 +359,7 @@ class CronService:
 
         store.jobs.append(job)
         self._save_store()
+        self._notify_changed(job.id)
         self._arm_timer()
 
         logger.info("Cron: added job '{}' ({})", name, job.id)
@@ -360,6 +374,7 @@ class CronService:
 
         if removed:
             self._save_store()
+            self._notify_changed(job_id)
             self._arm_timer()
             logger.info("Cron: removed job {}", job_id)
 
@@ -377,6 +392,7 @@ class CronService:
                 else:
                     job.state.next_run_at_ms = None
                 self._save_store()
+                self._notify_changed(job.id)
                 self._arm_timer()
                 return job
         return None
@@ -390,6 +406,7 @@ class CronService:
                     return False
                 await self._execute_job(job)
                 self._save_store()
+                self._notify_changed(job.id)
                 self._arm_timer()
                 return True
         return False

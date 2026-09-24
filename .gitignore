@@ -5,6 +5,7 @@
 *.pyc
 dist/
 node_modules/
+nanobot/api/dashboard_static/
 build/
 *.egg-info/
 *.egg

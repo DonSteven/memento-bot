@@ -9,5 +9,6 @@ build/
 .env
 .assets
 node_modules/
+nanobot/api/dashboard_static/
 bridge/dist/
 workspace/

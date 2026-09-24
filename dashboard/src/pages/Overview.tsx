@@ -7,6 +7,7 @@ import {
 } from 'recharts'
 
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
+import { useLiveUpdates } from '../components/LiveUpdates'
 import { StatusBadge } from '../components/StatusBadge'
 import { Button } from '../components/ui/button'
 import { dashboardApi } from '../lib/api'
@@ -16,6 +17,7 @@ import type { OverviewData } from '../lib/types'
 type Range = 6 | 12 | 24
 
 export function Overview() {
+  const { versions } = useLiveUpdates()
   const [data, setData] = useState<OverviewData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -34,7 +36,7 @@ export function Overview() {
       if (!controller.signal.aborted) setLoading(false)
     })
     return () => controller.abort()
-  }, [reload])
+  }, [reload, versions.overview])
 
   const hours = useMemo(() => data?.hours.slice(-range) ?? [], [data, range])
   const hasRuns = hours.some(hour => hour.runs > 0)

@@ -595,7 +595,8 @@ async def _start_dashboard_listener(agent, cron, config):
     try:
         await asyncio.to_thread(agent.observability_store.initialize)
         app = create_dashboard_app(agent, cron, agent.observability_store,
-                                   host=config.dashboard.host)
+                                   host=config.dashboard.host,
+                                   events=getattr(agent, "observability_events", None))
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, config.dashboard.host, config.dashboard.port)
@@ -658,6 +659,7 @@ def gateway(
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronJob
     from nanobot.heartbeat.service import HeartbeatService
+    from nanobot.observability.events import DashboardEvents
     from nanobot.session.manager import SessionManager
 
     if verbose:
@@ -679,7 +681,10 @@ def gateway(
 
     # Create cron service with workspace-scoped store
     cron_store_path = config.workspace_path / "cron" / "jobs.json"
+    dashboard_events = DashboardEvents() if config.dashboard.enabled else None
     cron = CronService(cron_store_path)
+    if dashboard_events is not None:
+        cron.on_change = lambda job_id: dashboard_events.publish("task.changed", job_id=job_id)
 
     # Create agent with cron service
     agent = AgentLoop(
@@ -693,6 +698,7 @@ def gateway(
         web_proxy=config.tools.web.proxy or None,
         exec_config=config.tools.exec,
         cron_service=cron,
+        observability_events=dashboard_events,
         restrict_to_workspace=config.tools.restrict_to_workspace,
         session_manager=session_manager,
         mcp_servers=config.tools.mcp_servers,

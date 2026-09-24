@@ -7,10 +7,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      '/api/dashboard': 'http://127.0.0.1:18790',
+      '/api/dashboard': { target: 'http://127.0.0.1:18790', ws: true },
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: '../nanobot/api/dashboard_static',
+    emptyOutDir: true,
   },
 })

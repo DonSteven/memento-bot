@@ -1545,12 +1545,9 @@ print(resp.choices[0].message.content)
 
 ## 🐳 Docker
 
-**Current limitation:** the inherited `Dockerfile` installs only base dependencies,
-so its image lacks `sqlite-vec`, required by Memento Bot memory. Before using the
-inherited commands below, both `uv pip install` steps must install
-`'.[web_knowledge]'` instead of `.` (plus any channel extras you need).
-Container startup has not been validated for this documentation update.
-Use the source Quick Start for the documented runtime setup.
+The Dockerfile installs the memory vector dependency and builds the Dashboard
+UI. Add any optional channel extras required by your configuration. Container
+startup still requires your own provider credentials and channel settings.
 
 
 > [!TIP]
@@ -1583,12 +1580,18 @@ docker run -v ~/.nanobot:/root/.nanobot --rm nanobot onboard
 vim ~/.nanobot/config.json
 
 # Run gateway (connects to enabled channels, e.g. Telegram/Discord/Mochat)
-docker run -v ~/.nanobot:/root/.nanobot -p 18790:18790 nanobot gateway
+docker run -v ~/.nanobot:/root/.nanobot -p 127.0.0.1:18790:18790 nanobot gateway
 
 # Or run a single command
 docker run -v ~/.nanobot:/root/.nanobot --rm nanobot agent -m "Hello!"
 docker run -v ~/.nanobot:/root/.nanobot --rm nanobot status
 ```
+
+For a host browser to reach the Dashboard, set `dashboard.host` to `0.0.0.0`
+in the container's config and keep the host port bound to `127.0.0.1` as
+shown above. With the default Dashboard host of `127.0.0.1`, the listener is
+accessible only inside the container. Docker Compose uses the same rule; set
+its port mapping to `127.0.0.1:18790:18790` when enabling host access.
 
 ## 🐧 Linux Service
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { RefreshCw, Trash2 } from 'lucide-react'
 
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
+import { useLiveUpdates } from '../components/LiveUpdates'
 import { Button } from '../components/ui/button'
 import { dashboardApi } from '../lib/api'
 import { formatDuration, formatTime } from '../lib/format'
@@ -26,6 +27,7 @@ function scheduleLabel(task: Task): string {
 }
 
 export function Tasks() {
+  const { versions } = useLiveUpdates()
   const [items, setItems] = useState<Task[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -45,7 +47,7 @@ export function Tasks() {
       if (!controller.signal.aborted) setLoading(false)
     })
     return () => controller.abort()
-  }, [reload])
+  }, [reload, versions.tasks])
 
   useEffect(() => () => mutation.current?.abort(), [])
 

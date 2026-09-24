@@ -17,13 +17,18 @@ WORKDIR /app
 # Install Python dependencies first (cached layer)
 COPY pyproject.toml README.md LICENSE ./
 RUN mkdir -p nanobot bridge && touch nanobot/__init__.py && \
-    uv pip install --system --no-cache . && \
+    uv pip install --system --no-cache '.[web_knowledge]' && \
     rm -rf nanobot bridge
 
 # Copy the full source and install
 COPY nanobot/ nanobot/
 COPY bridge/ bridge/
-RUN uv pip install --system --no-cache .
+COPY dashboard/package.json dashboard/package-lock.json dashboard/
+RUN cd dashboard && npm ci
+COPY dashboard/index.html dashboard/tsconfig.json dashboard/vite.config.ts dashboard/
+COPY dashboard/src/ dashboard/src/
+RUN cd dashboard && npm run build
+RUN uv pip install --system --no-cache '.[web_knowledge]'
 
 # Build the WhatsApp bridge
 RUN git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"

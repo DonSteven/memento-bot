@@ -98,11 +98,13 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build]
+artifacts = ["nanobot/api/dashboard_static/**"]
 include = [
     "nanobot/**/*.py",
     "nanobot/templates/**/*.md",
     "nanobot/skills/**/*.md",
     "nanobot/skills/**/*.sh",
+    "nanobot/api/dashboard_static/**",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -118,6 +120,7 @@ packages = ["nanobot"]
 include = [
     "nanobot/",
     "bridge/",
+    "dashboard/",
     "README.md",
     "LICENSE",
 ]

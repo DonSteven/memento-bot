@@ -35,6 +35,7 @@ from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.command import CommandContext, CommandRouter, register_builtin_commands
+from nanobot.observability.events import DashboardEvents
 from nanobot.observability.hook import ObservabilityHook, preview
 from nanobot.observability.store import ObservabilityStore, new_run_id, utc_now
 from nanobot.providers.base import LLMProvider
@@ -194,6 +195,7 @@ class AgentLoop:
         memory_api_key: str | None = None,
         memory_service: MemoryService | None = None,
         observability_store: ObservabilityStore | None = None,
+        observability_events: DashboardEvents | None = None,
     ):
         from nanobot.config.schema import (
             ExecToolConfig,
@@ -232,6 +234,7 @@ class AgentLoop:
         self.observability_store = observability_store or ObservabilityStore(
             workspace / "observability" / "dashboard.db"
         )
+        self.observability_events = observability_events
         self._observability_init_lock = asyncio.Lock()
         self._observability_initialized = False
         self.sessions = session_manager or SessionManager(workspace)
@@ -381,6 +384,12 @@ class AgentLoop:
         ))
         try:
             await asyncio.shield(task)
+            if self.observability_events is not None and method in {"start_run", "add_event", "add_usage", "finish_run"}:
+                event_type = {"start_run": "run.started", "finish_run": "run.finished"}.get(method, "run.updated")
+                try:
+                    self.observability_events.publish(event_type, run_id=args[0])
+                except Exception:
+                    logger.exception("Dashboard event broadcast failed")
             return True
         except asyncio.CancelledError:
             try:
@@ -412,7 +421,8 @@ class AgentLoop:
                                 (time.perf_counter() - started) * 1000, "Cancelled")
             raise
         state: dict[str, Any] = {
-            "hook": ObservabilityHook(self.observability_store, run_id) if active else None,
+            "hook": ObservabilityHook(self.observability_store, run_id,
+                                      self.observability_events) if active else None,
             "run_id": run_id if active else None,
             "result": None,
         }
