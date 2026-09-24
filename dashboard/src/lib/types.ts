@@ -153,3 +153,29 @@ export interface KnowledgeResult {
   ingested_urls: string[]
   online_errors: string[]
 }
+
+export interface Task {
+  id: string
+  name: string
+  enabled: boolean
+  schedule: {
+    kind: 'at' | 'every' | 'cron'
+    at_ms: number | null
+    every_ms: number | null
+    expr: string | null
+    tz: string | null
+  }
+  payload: { kind: string; message: string; deliver: boolean; channel: string | null; to: string | null }
+  state: {
+    next_run_at_ms: number | null
+    last_run_at_ms: number | null
+    last_status: 'ok' | 'error' | 'skipped' | null
+    last_error: string | null
+    run_history: { run_at_ms: number; status: 'ok' | 'error' | 'skipped'; duration_ms: number; error: string | null }[]
+  }
+  created_at_ms: number
+  updated_at_ms: number
+  delete_after_run: boolean
+}
+
+export interface TaskList { items: Task[] }

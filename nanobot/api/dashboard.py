@@ -168,6 +168,38 @@ async def knowledge_search(request: web.Request) -> web.Response:
     return web.json_response(result.to_dict())
 
 
+async def tasks(request: web.Request) -> web.Response:
+    cron = request.app[CRON_KEY]
+    if cron is None:
+        return error(503, "tasks_unavailable", "Task service is unavailable")
+    return web.json_response({"items": [asdict(job) for job in cron.list_jobs(include_disabled=True)]})
+
+
+async def task_update(request: web.Request) -> web.Response:
+    cron = request.app[CRON_KEY]
+    if cron is None:
+        return error(503, "tasks_unavailable", "Task service is unavailable")
+    try:
+        body = await request.json()
+    except (ValueError, web.HTTPException):
+        return error(400, "invalid_body", "Expected a JSON object with enabled")
+    if not isinstance(body, dict) or set(body) != {"enabled"} or type(body["enabled"]) is not bool:
+        return error(400, "invalid_body", "enabled must be a boolean")
+    job = cron.enable_job(request.match_info["job_id"], body["enabled"])
+    if job is None:
+        return error(404, "not_found", "Task not found")
+    return web.json_response(asdict(job))
+
+
+async def task_delete(request: web.Request) -> web.Response:
+    cron = request.app[CRON_KEY]
+    if cron is None:
+        return error(503, "tasks_unavailable", "Task service is unavailable")
+    if not cron.remove_job(request.match_info["job_id"]):
+        return error(404, "not_found", "Task not found")
+    return web.Response(status=204)
+
+
 async def dashboard_index(request: web.Request) -> web.StreamResponse:
     index = request.app[STATIC_KEY] / "index.html"
     if not index.is_file():
@@ -202,6 +234,9 @@ def create_dashboard_app(agent_loop, cron_service, observability_store: Observab
     app.router.add_get("/api/dashboard/memory", memory)
     app.router.add_post("/api/dashboard/memory/search", memory_search)
     app.router.add_post("/api/dashboard/knowledge/search", knowledge_search)
+    app.router.add_get("/api/dashboard/tasks", tasks)
+    app.router.add_patch("/api/dashboard/tasks/{job_id}", task_update)
+    app.router.add_delete("/api/dashboard/tasks/{job_id}", task_delete)
     app.router.add_get("/dashboard", dashboard_redirect)
     app.router.add_get("/dashboard/", dashboard_index)
     app.router.add_get("/dashboard/assets/{name:.*}", dashboard_asset)

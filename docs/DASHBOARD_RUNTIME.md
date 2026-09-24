@@ -1,4 +1,4 @@
-# Dashboard runtime (P1–P5)
+# Dashboard runtime (P1–P6)
 
 The gateway starts a local REST listener by default at `127.0.0.1:18790`.
 It uses the gateway's existing `AgentLoop` and `CronService`. The independent
@@ -33,9 +33,8 @@ The Runs page supports a direct link such as
 run `npm run dev` in `dashboard/`; Vite proxies `/api/dashboard` to the gateway
 on port 18790.
 
-P5 includes Overview, Runs, Memory, and Knowledge. Refresh manually to pick up
-changes from another process. Tasks and live updates are planned for later
-stages.
+P6 includes Overview, Runs, Memory, Knowledge, and Tasks. Refresh manually to
+pick up changes from another process. Live updates are planned for a later stage.
 
 The Memory page reads a committed SQLite snapshot. Refreshing it does not
 synchronize Markdown or call the embedding provider. It shows the revision,
@@ -62,11 +61,20 @@ error. `fetched_urls` records URLs for which a fetch was attempted, whereas
 `ingested_urls` records successful ingestion. An unavailable retriever returns
 503; an unhandled upstream failure returns 502.
 
+The Tasks page reads the gateway's current `CronService`, including disabled
+jobs and their saved run history. It can enable, disable, or delete existing
+jobs. Enabling recalculates the next run; disabling prevents future scheduling
+but does not cancel a task already running. Deleting removes the schedule and
+its history after confirmation. Task changes are saved to the existing
+`jobs.json`; there is no separate Dashboard task store. Use Refresh to pick up
+changes made by the cron tool or another process.
+
 ```bash
 curl http://127.0.0.1:18790/api/dashboard/overview
 curl 'http://127.0.0.1:18790/api/dashboard/runs?limit=50'
 curl http://127.0.0.1:18790/api/dashboard/runs/RUN_ID
 curl http://127.0.0.1:18790/api/dashboard/memory
+curl http://127.0.0.1:18790/api/dashboard/tasks
 ```
 
 The runs endpoint returns `items` and `next_cursor`. Pass the cursor unchanged

@@ -1,4 +1,4 @@
-import type { KnowledgeResult, MemorySearchResult, MemorySnapshot, OverviewData, RunDetail, RunPage } from './types'
+import type { KnowledgeResult, MemorySearchResult, MemorySnapshot, OverviewData, RunDetail, RunPage, Task, TaskList } from './types'
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public code?: string) {
@@ -22,7 +22,7 @@ async function requestJson<T>(path: string, signal: AbortSignal, init?: RequestI
     throw new ApiError(body?.error?.message || `Request failed (${response.status})`,
       response.status, body?.error?.code)
   }
-  return response.json() as Promise<T>
+  return response.status === 204 ? undefined as T : response.json() as Promise<T>
 }
 
 const getJson = <T,>(path: string, signal: AbortSignal) => requestJson<T>(path, signal)
@@ -47,4 +47,12 @@ export const dashboardApi = {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, doc_limit: docLimit, evidence_limit: evidenceLimit }),
     }),
+  tasks: (signal: AbortSignal) => getJson<TaskList>('/tasks', signal),
+  setTaskEnabled: (id: string, enabled: boolean, signal: AbortSignal) =>
+    requestJson<Task>(`/tasks/${encodeURIComponent(id)}`, signal, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    }),
+  deleteTask: (id: string, signal: AbortSignal) =>
+    requestJson<void>(`/tasks/${encodeURIComponent(id)}`, signal, { method: 'DELETE' }),
 }

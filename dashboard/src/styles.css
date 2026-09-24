@@ -204,6 +204,26 @@ h1 { font-size: 29px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -.035em
 .knowledge-online-list h4 span { color: var(--muted); font-family: var(--mono); }
 .knowledge-online-list ul { margin: 0; padding-left: 18px; }
 .knowledge-online-list li { overflow-wrap: anywhere; margin-bottom: 8px; line-height: 1.45; }
+.tasks-note { margin: -12px 0 18px; color: var(--muted); font-size: 11px; }
+.tasks-error { margin-bottom: 15px; }
+.tasks-table-wrap, .tasks-history-wrap { overflow-x: auto; }
+.tasks-table, .tasks-history table { border-collapse: collapse; width: 100%; min-width: 800px; }
+.tasks-table th, .tasks-history th { text-align: left; padding: 11px 14px; color: #8a9a98; font: 700 10px var(--mono); text-transform: uppercase; }
+.tasks-table td, .tasks-history td { border-top: 1px solid #edf1f0; padding: 12px 14px; color: #536663; font-size: 11px; vertical-align: top; }
+.tasks-table td strong, .tasks-table td small { display: block; }
+.tasks-table td strong { color: var(--ink); font-size: 12px; }
+.tasks-table td small { color: #8a9a98; margin-top: 5px; }
+.task-status, .task-last { display: inline-block; border-radius: 5px; padding: 4px 6px; font: 700 10px var(--mono); }
+.task-enabled, .task-last-ok { color: #137757; background: #e4f5ee; }
+.task-disabled, .task-last-skipped { color: #69747a; background: #eef0f2; }
+.task-last-error { color: #b5473a; background: #fff0ed; }
+.task-actions { display: flex; gap: 5px; }
+.tasks-history { border-top: 1px solid var(--line); }
+.tasks-history details { border-bottom: 1px solid var(--line); }
+.tasks-history summary { cursor: pointer; padding: 12px 19px; font-size: 11px; font-weight: 600; }
+.tasks-history details > p { margin: 0 19px 15px; font-size: 11px; }
+.tasks-history table { min-width: 600px; }
+.tasks-history td:last-child { overflow-wrap: anywhere; }
 
 @media (max-width: 1200px) {
   .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -224,11 +244,12 @@ h1 { font-size: 29px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -.035em
   .run-list-items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 620px) {
-  .sidebar { gap: 12px; padding: 10px 12px 0; }
+  .sidebar { display: block; padding: 10px 12px 0; }
   .brand strong { font-size: 10px; }
   .brand small { font-size: 7px; }
   .brand-mark { width: 30px; height: 30px; }
-  .nav-link { font-size: 11px; gap: 5px; }
+  .nav { overflow-x: auto; }
+  .nav-link { flex: 0 0 auto; white-space: nowrap; font-size: 11px; gap: 5px; }
   .nav-link svg { width: 14px; }
   .page-heading { flex-direction: column; gap: 9px; margin-bottom: 19px; }
   .heading-actions { padding: 0; }
