@@ -28,7 +28,7 @@ and index consistency.
 
 See [the runtime contract](MEMORY_P1_IMPLEMENTATION.md) and
 [the implementation roadmap](MEMORY_KNOWLEDGE_IMPLEMENTATION_PLAN.md).
-This document is an edited English treatment of the memory research plan,
+This document is an edited treatment of the memory research plan,
 updated to the current implementation contracts.
 
 The final model request is checked after hooks and tool results. Optional dynamic

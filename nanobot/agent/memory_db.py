@@ -211,7 +211,9 @@ class MemoryDatabase:
             if version_row is not None and int(version_row["value"]) != SCHEMA_VERSION:
                 raise RuntimeError(
                     f"Memory database schema_version={version_row['value']} is incompatible with "
-                    f"schema_version={SCHEMA_VERSION}. Preserve it for the planned data conversion."
+                    f"schema_version={SCHEMA_VERSION}. Use scripts/upgrade_memory_knowledge.py "
+                    "as described in spec/MEMORY_KNOWLEDGE_UPGRADE.md, or follow "
+                    "docs/DASHBOARD_RUNTIME.md to explicitly reset disposable memory data."
                 )
             conn.executescript("""
                 create table if not exists raw_events (

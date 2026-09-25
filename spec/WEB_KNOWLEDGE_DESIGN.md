@@ -7,7 +7,7 @@ source-linked evidence through `kb_search`. Personal memory and external
 knowledge have separate databases and responsibilities: personal memory records
 facts about the user, while the knowledge store contains untrusted source text.
 
-This is an edited English version of the external-knowledge research plan,
+This is an edited version of the external-knowledge research plan,
 updated through local evidence assessment and bounded online supplementation. The implementation
 uses the existing agent Hook and Tool interfaces and remains disabled by
 default through `knowledge.enabled`.

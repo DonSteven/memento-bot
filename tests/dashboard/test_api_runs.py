@@ -1,8 +1,11 @@
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
+from nanobot.agent.hook import AgentHookContext
 from nanobot.api.dashboard import AGENT_KEY, CRON_KEY, create_dashboard_app
+from nanobot.observability.hook import ObservabilityHook
 from nanobot.observability.store import ObservabilityStore
+from nanobot.providers.base import LLMResponse, ToolCallRequest
 
 
 @pytest.mark.asyncio
@@ -50,3 +53,45 @@ async def test_unavailable_store_is_503(tmp_path):
         response = await client.get("/api/dashboard/runs")
         assert response.status == 503
         assert (await response.json())["error"]["code"] == "store_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_new_observations_are_sanitized_in_store_and_rest(tmp_path):
+    store = ObservabilityStore(tmp_path / "dashboard.db")
+    store.initialize()
+    store.start_run("demo", "cli:demo", "cli", "fake-model")
+    hook = ObservabilityHook(store, "demo")
+    call = ToolCallRequest(id="call-1", name="demo_tool", arguments={
+        "clientSecret": "DEMO_SECRET_DO_NOT_PERSIST", "count": 2})
+    context = AgentHookContext(iteration=0, messages=[])
+    await hook.before_iteration(context)
+    context.response = LLMResponse(content="Authorization: Bearer DEMO_SECRET_DO_NOT_PERSIST",
+                                   tool_calls=[call], usage={"prompt_tokens": 11,
+                                                             "completion_tokens": 3})
+    context.usage = {"prompt_tokens": 11, "completion_tokens": 3}
+    context.tool_calls = [call]
+    await hook.before_execute_tools(context)
+    context.tool_results = ["data:image/png;base64,DEMO_SECRET_DO_NOT_PERSIST"]
+    context.tool_events = [{"status": "ok"}]
+    await hook.after_iteration(context)
+    store.finish_run("demo", "completed", "completed", 10)
+
+    class Cron:
+        def list_jobs(self, include_disabled=False):
+            return []
+
+    raw = store.get_run("demo")
+    app = create_dashboard_app(object(), Cron(), store)
+    async with TestClient(TestServer(app)) as client:
+        response = await client.get("/api/dashboard/runs/demo")
+        assert response.status == 200
+        api = await response.json()
+    for detail in (raw, api):
+        assert "DEMO_SECRET_DO_NOT_PERSIST" not in str(detail)
+        assert "[REDACTED]" in str(detail)
+        assert "[BINARY DATA]" in str(detail)
+        assert detail["run"]["prompt_tokens"] == 11
+        assert [event["kind"] for event in detail["events"]] == ["model", "tools"]
+        assert detail["events"][1]["data"]["calls"][0]["arguments"]["text"].find('"count": 2') > 0
+    assert context.response.content == "Authorization: Bearer DEMO_SECRET_DO_NOT_PERSIST"
+    assert context.tool_results == ["data:image/png;base64,DEMO_SECRET_DO_NOT_PERSIST"]

@@ -29,11 +29,13 @@ def make_loop(tmp_path, responses):
 @pytest.mark.asyncio
 async def test_two_round_real_turn_and_usage(tmp_path):
     loop = make_loop(tmp_path, [
-        LLMResponse(content="working", tool_calls=[
-            ToolCallRequest(id="c1", name="list_dir", arguments={"path": "."})],
+        LLMResponse(content="Authorization: Bearer DEMO_SECRET_DO_NOT_PERSIST", tool_calls=[
+            ToolCallRequest(id="c1", name="list_dir", arguments={
+                "path": ".", "accessToken": "DEMO_SECRET_DO_NOT_PERSIST"})],
             usage={"prompt_tokens": 10, "completion_tokens": 2}),
         LLMResponse(content="done", usage={"prompt_tokens": 20, "completion_tokens": 3}),
     ])
+    loop.tools.execute = AsyncMock(return_value="data:image/png;base64,DEMO_SECRET_DO_NOT_PERSIST")
     response = await loop.process_direct("hello", session_key="cli:test")
     assert response.content == "done"
     store = ObservabilityStore(tmp_path / "observability" / "dashboard.db")
@@ -42,7 +44,12 @@ async def test_two_round_real_turn_and_usage(tmp_path):
     assert (run["prompt_tokens"], run["completion_tokens"]) == (30, 5)
     events = store.get_run(run["run_id"])["events"]
     assert [event["kind"] for event in events] == ["memory", "model", "tools", "model"]
-    assert events[2]["data"]["calls"][0]["result_preview"]["truncated"]
+    stored = str(events)
+    assert "DEMO_SECRET_DO_NOT_PERSIST" not in stored
+    assert "[BINARY DATA]" in stored
+    assert "[REDACTED]" in stored
+    assert loop.tools.execute.return_value == "data:image/png;base64,DEMO_SECRET_DO_NOT_PERSIST"
+    assert loop.provider.chat_with_retry.call_args_list
     await loop.close_mcp()
 
 
@@ -88,6 +95,18 @@ async def test_locked_store_does_not_block_event_loop(tmp_path):
     db.rollback()
     db.close()
     assert (await turn).content == "done"
+    await loop.close_mcp()
+
+
+@pytest.mark.asyncio
+async def test_run_level_error_is_sanitized_without_changing_exception(tmp_path):
+    loop = make_loop(tmp_path, [RuntimeError("token=DEMO_SECRET_DO_NOT_PERSIST")])
+    with pytest.raises(RuntimeError, match="DEMO_SECRET_DO_NOT_PERSIST"):
+        await loop.process_direct("hello", session_key="cli:error")
+    store = ObservabilityStore(tmp_path / "observability" / "dashboard.db")
+    detail = store.get_run(store.list_runs()["items"][0]["run_id"])
+    assert "DEMO_SECRET_DO_NOT_PERSIST" not in str(detail)
+    assert "[REDACTED]" in detail["run"]["error"]
     await loop.close_mcp()
 
 

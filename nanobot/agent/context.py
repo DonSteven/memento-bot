@@ -148,7 +148,7 @@ IMPORTANT: To send files (images, documents, audio, video) to the user, you MUST
         history: list[dict[str, Any]], # 之前已经发生过的对话历史：[{"role": "user", "content": "帮我看 README"}, {"role": "assistant", "content": "好的，我来看看"}]
         current_message: str, # 当前这一轮用户刚发来的文本
         skill_names: list[str] | None = None, # 目前未启用
-        media: list[str] | None = None, # 当前消息附带的媒体文件路径列表，当前实现主要处理图片：["/home/lkay/Pictures/screenshot.png"]
+        media: list[str] | None = None, # 当前消息附带的媒体文件路径列表，当前实现主要处理图片
         channel: str | None = None, # 当前消息来自哪个渠道
         chat_id: str | None = None,
         current_role: str = "user", # 有些场景可能不是用户，比如系统消息、subagent 消息

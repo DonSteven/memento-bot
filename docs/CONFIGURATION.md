@@ -761,7 +761,7 @@ nanobot agent -m "Hello!"
 nanobot agent -c ~/.nanobot-telegram/config.json -m "Hello!"
 
 # One-off workspace override on top of that config
-nanobot agent -c ~/.nanobot-telegram/config.json -w /tmp/nanobot-telegram-test -m "Hello!"
+nanobot agent -c ~/.nanobot-telegram/config.json -w ~/.nanobot-telegram/test-workspace -m "Hello!"
 ```
 
 > Docker users: use `docker run -it` for interactive OAuth login.
@@ -799,7 +799,7 @@ nanobot agent -m "Hello!"
 nanobot agent -c ~/.nanobot-telegram/config.json -m "Hello!"
 
 # One-off workspace override on top of that config
-nanobot agent -c ~/.nanobot-telegram/config.json -w /tmp/nanobot-telegram-test -m "Hello!"
+nanobot agent -c ~/.nanobot-telegram/config.json -w ~/.nanobot-telegram/test-workspace -m "Hello!"
 ```
 
 > Docker users: use `docker run -it` for interactive OAuth login.
@@ -1305,7 +1305,7 @@ nanobot agent -c ~/.nanobot-telegram/config.json -m "Hello from Telegram instanc
 nanobot agent -c ~/.nanobot-discord/config.json -m "Hello from Discord instance"
 
 # Optional one-off workspace override
-nanobot agent -c ~/.nanobot-telegram/config.json -w /tmp/nanobot-telegram-test
+nanobot agent -c ~/.nanobot-telegram/config.json -w ~/.nanobot-telegram/test-workspace
 ```
 
 > `nanobot agent` starts a local CLI agent using the selected workspace/config. It does not attach to or proxy through an already running `nanobot gateway` process.
@@ -1366,7 +1366,7 @@ nanobot gateway --config ~/.nanobot-discord/config.json
 Override workspace for one-off runs when needed:
 
 ```bash
-nanobot gateway --config ~/.nanobot-telegram/config.json --workspace /tmp/nanobot-telegram-test
+nanobot gateway --config ~/.nanobot-telegram/config.json --workspace ~/.nanobot-telegram/test-workspace
 ```
 
 ### Common Use Cases
@@ -1600,7 +1600,7 @@ Run the gateway as a systemd user service so it starts automatically and restart
 **1. Find the nanobot binary path:**
 
 ```bash
-which nanobot   # e.g. /home/user/.local/bin/nanobot
+which nanobot   # e.g. ~/.local/bin/nanobot
 ```
 
 **2. Create the service file** at `~/.config/systemd/user/nanobot-gateway.service` (replace `ExecStart` path if needed):

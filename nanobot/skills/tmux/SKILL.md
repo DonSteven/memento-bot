@@ -77,9 +77,9 @@ for i in 1 2 3 4 5; do
   tmux -S "$SOCKET" new-session -d -s "agent-$i"
 done
 
-# Launch agents in different workdirs
-tmux -S "$SOCKET" send-keys -t agent-1 "cd /tmp/project1 && codex --yolo 'Fix bug X'" Enter
-tmux -S "$SOCKET" send-keys -t agent-2 "cd /tmp/project2 && codex --yolo 'Fix bug Y'" Enter
+# Set PROJECT1_DIR and PROJECT2_DIR to the target repositories first.
+tmux -S "$SOCKET" send-keys -t agent-1 "cd '$PROJECT1_DIR' && codex --yolo 'Fix bug X'" Enter
+tmux -S "$SOCKET" send-keys -t agent-2 "cd '$PROJECT2_DIR' && codex --yolo 'Fix bug Y'" Enter
 
 # Poll for completion (check if prompt returned)
 for sess in agent-1 agent-2; do

@@ -193,20 +193,6 @@ class SkillsLoader:
     def get_always_skills(self) -> list[str]: # ["memory", "weather"]
         """Get skills marked as always=true that meet requirements."""
         result = []
-        """ list_skills:
-            [
-                {
-                    "name": "memory",
-                    "path": "/home/lkay/.nanobot/workspace/skills/memory/SKILL.md",
-                    "source": "workspace"
-                },
-                {
-                    "name": "weather",
-                    "path": "/home/lkay/projects/nanobot/nanobot/skills/weather/SKILL.md",
-                    "source": "builtin"
-                }
-            ]
-        """
         for s in self.list_skills(filter_unavailable=True):
             meta = self.get_skill_metadata(s["name"]) or {}
             # {

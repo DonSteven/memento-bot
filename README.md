@@ -15,6 +15,7 @@ Development after the baseline concentrates on memory, retrieval and runtime int
 | Similar passages alone do not establish answer coverage. | Built parent–child knowledge retrieval, reranking, source-linked evidence selection and structured model assessment of missing information. |
 | Local evidence can be incomplete. | Added one bounded search-and-ingestion round, followed by retrieval and reassessment against the same persistent knowledge store. |
 | Growing memory and tool results can exceed model limits. | Added model-call boundary checks, whole-record/evidence reduction, explicit context-limit results and offline workspace conversion. |
+| Local runs and service behavior need inspection. | Added a gateway Dashboard with per-run Memory/Model/Tools traces, same-process live updates, and direct Memory, Knowledge and Cron diagnostics. |
 
 **Inherited from nanobot:** the agent loop and runner foundation, provider integrations, tools and MCP, chat channels, sessions, scheduling, CLI, Python SDK and HTTP API. Memento Bot extends these entry points; it does not claim their original implementation.
 
@@ -62,6 +63,33 @@ Insufficient local evidence permits one search-interface call using the original
 The [conversion utility](scripts/upgrade_memory_knowledge.py) defaults to read-only preflight and converts supported memory/knowledge formats into a fresh copy. It preserves originals and requires explicit source selection for conflicts. A copy without rebuilt vectors remains `REBUILD_REQUIRED`. See [conversion and switching](spec/MEMORY_KNOWLEDGE_UPGRADE.md).
 
 Storage and conversion can be local/offline; runtime semantic retrieval uses DashScope APIs, and knowledge search also uses reranking and model assessment.
+
+### Dashboard and Observability
+
+The Dashboard contribution adds [bounded Agent observations](nanobot/observability/hook.py),
+a [workspace-scoped SQLite run store](nanobot/observability/store.py),
+[gateway REST/WebSocket routes](nanobot/api/dashboard.py), and the
+[React UI](dashboard/src/pages/). Runs exposes Memory, Model and Tools events,
+with token usage and sanitized previews. Overview summarizes recent runs;
+Memory, Knowledge and Tasks reuse the gateway's existing services. The Agent
+loop, Memory/Knowledge services and Cron foundation are identified above as
+inherited or extended components; the Dashboard does not claim to originate
+their underlying behavior.
+
+```mermaid
+flowchart LR
+    A[AgentLoop and ObservabilityHook] --> S[(Observation SQLite)]
+    S --> R[Dashboard REST]
+    R --> U[React Overview and Runs]
+    A --> W[Same-process WebSocket invalidations]
+    W --> U
+    M[Existing Memory, Knowledge and Cron services] --> R
+    R --> D[React diagnostics]
+```
+
+See the [design record](docs/DASHBOARD_V1_PLAN.md) for decisions and
+limitations and the [runtime guide](docs/DASHBOARD_RUNTIME.md) for build/start
+commands and local verification.
 
 ## Evaluation / Reliability
 
@@ -139,6 +167,23 @@ Live updates cover changes in that gateway process; use Refresh for writes from
 another process. The listener has no login and binds to localhost by default.
 See [Dashboard runtime](docs/DASHBOARD_RUNTIME.md) for configuration, data
 semantics, build steps, and side effects of manual searches.
+
+The following captures use the real React UI with [synthetic fixture data](scripts/dashboard_demo.py).
+They illustrate navigation and traces; displayed timing and token values are
+examples, not performance measurements. To reproduce without API keys, build
+the UI, then run `.venv/bin/python scripts/dashboard_demo.py --data-dir /tmp/nanobot-ui-demo`
+with a new directory. Open `http://127.0.0.1:18791/dashboard/`, inspect
+Overview and `#/runs/demo-complete-03`, stop with Ctrl-C, then remove the
+temporary directory. The fixture serves inert Memory, Knowledge and Cron
+dependencies; it is not the full live gateway.
+
+![Overview page with three illustrative Agent runs and hourly charts](docs/assets/dashboard/overview.png)
+
+*Synthetic demo data — Overview. Timing and counts are illustrative.*
+
+![Expanded run trace with Memory, Model, Tools and sanitized previews](docs/assets/dashboard/runs.png)
+
+*Synthetic demo data — expanded Runs trace. Tokens and durations are illustrative.*
 
 ## Project Structure
 

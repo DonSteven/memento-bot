@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from typing import Any
 
@@ -13,24 +14,65 @@ from nanobot.agent.hook import AgentHook, AgentHookContext
 from nanobot.observability.events import DashboardEvents
 from nanobot.observability.store import ObservabilityStore, utc_now
 
-_SECRET_KEYS = {"api_key", "apikey", "token", "password", "secret", "authorization",
-                "access_key", "client_secret", "cookie"}
+_SECRET_KEYS = {"apikey", "token", "password", "secret", "authorization",
+                "accesskey", "accesstoken", "refreshtoken", "clientsecret", "cookie",
+                "setcookie", "xapikey"}
+_DATA_URL = re.compile(r"data:[^\s,;\"'<>]*(?:;[^\s,;\"'<>]+)*;base64,[A-Za-z0-9+/_=-]+",
+                       re.IGNORECASE)
+_ASSIGNMENT = re.compile(
+    r"(?<![\w-])(?P<key>[A-Za-z][A-Za-z0-9_-]*)(?P<sep>\s*[:=]\s*)"
+    r"(?P<value>\[REDACTED\]|\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;}\]]+)"
+)
+_AUTH_HEADER = re.compile(r"(?im)^(?P<prefix>[ \t]*Authorization[ \t]*:[ \t]*"
+                          r"(?:Bearer|Basic)[ \t]+)[^\r\n]+")
+_COOKIE_HEADER = re.compile(r"(?im)^(?P<prefix>[ \t]*(?:Cookie|Set-Cookie)[ \t]*:[ \t]*)"
+                            r"[^\r\n]+")
+
+
+def _sensitive_key(key: str) -> bool:
+    return re.sub(r"[^a-z0-9]", "", key.lower()) in _SECRET_KEYS
+
+
+def _redact_text(value: str) -> str:
+    def replace_assignment(match: re.Match[str]) -> str:
+        key, separator, content = match.group("key", "sep", "value")
+        if not _sensitive_key(key) or content == "[REDACTED]":
+            return match.group()
+        # Preserve the scheme so the full Authorization header can be matched below.
+        if key.lower() == "authorization" and content.lower() in {"bearer", "basic"}:
+            return match.group()
+        quote = content[0] if content.startswith(("'", '"')) else ""
+        return f"{key}{separator}{quote}[REDACTED]{quote}"
+
+    value = _DATA_URL.sub("[BINARY DATA]", value)
+    value = _ASSIGNMENT.sub(replace_assignment, value)
+    value = _AUTH_HEADER.sub(lambda match: match.group("prefix") + "[REDACTED]", value)
+    return _COOKIE_HEADER.sub(lambda match: match.group("prefix") + "[REDACTED]", value)
 
 
 def redact(value: Any) -> Any:
     if isinstance(value, dict):
-        return {key: "[REDACTED]" if key.lower().replace("-", "_") in _SECRET_KEYS
+        return {key: "[REDACTED]" if isinstance(key, str) and _sensitive_key(key)
                 else redact(item) for key, item in value.items()}
     if isinstance(value, list):
         return [redact(item) for item in value]
-    if isinstance(value, str) and (value.startswith("data:") and ";base64," in value):
-        return "[BINARY DATA]"
+    if isinstance(value, str):
+        if value.lstrip().startswith(("{", "[")):
+            try:
+                parsed = json.loads(value)
+            except ValueError:
+                pass
+            else:
+                if isinstance(parsed, (dict, list)):
+                    return json.dumps(redact(parsed), ensure_ascii=False, default=str)
+        return _redact_text(value)
     return value
 
 
 def preview(value: Any, max_bytes: int = 4096) -> dict[str, Any]:
+    value = redact(value)
     if not isinstance(value, str):
-        value = json.dumps(redact(value), ensure_ascii=False, default=str)
+        value = json.dumps(value, ensure_ascii=False, default=str)
     encoded = value.encode("utf-8", errors="replace")
     clipped = encoded[:max_bytes].decode("utf-8", errors="ignore")
     return {"text": clipped, "truncated": len(encoded) > max_bytes}

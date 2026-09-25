@@ -32,3 +32,51 @@ jobs:
 
     - name: Run tests
       run: uv run pytest tests/ nanobot/tests/
+
+  dashboard-package:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "20.19.0"
+        cache: npm
+        cache-dependency-path: dashboard/package-lock.json
+
+    - uses: astral-sh/setup-uv@v4
+
+    - name: Build Dashboard with type checking
+      working-directory: dashboard
+      run: |
+        npm ci
+        npm run build
+
+    - name: Build and inspect wheel and sdist
+      run: |
+        uv build --wheel --sdist --out-dir "$RUNNER_TEMP/dashboard-dist"
+        python -I scripts/check_dashboard_package.py --archive "$RUNNER_TEMP"/dashboard-dist/*.whl
+        python -I scripts/check_dashboard_package.py --archive "$RUNNER_TEMP"/dashboard-dist/*.tar.gz
+
+    - name: Verify installed wheel outside checkout
+      run: |
+        uv venv "$RUNNER_TEMP/dashboard-wheel-venv"
+        uv pip install --python "$RUNNER_TEMP/dashboard-wheel-venv/bin/python" "$RUNNER_TEMP"/dashboard-dist/*.whl
+        cd "$RUNNER_TEMP"
+        "$RUNNER_TEMP/dashboard-wheel-venv/bin/python" -I "$GITHUB_WORKSPACE/scripts/check_dashboard_package.py" --installed --source-root "$GITHUB_WORKSPACE"
+
+    - name: Rebuild sdist wheel and verify installed resources
+      run: |
+        mkdir -p "$RUNNER_TEMP/dashboard-sdist-src" "$RUNNER_TEMP/dashboard-sdist-dist"
+        tar -xzf "$RUNNER_TEMP"/dashboard-dist/*.tar.gz -C "$RUNNER_TEMP/dashboard-sdist-src"
+        cd "$RUNNER_TEMP"/dashboard-sdist-src/*
+        uv build --wheel --out-dir "$RUNNER_TEMP/dashboard-sdist-dist"
+        python -I "$GITHUB_WORKSPACE/scripts/check_dashboard_package.py" --archive "$RUNNER_TEMP"/dashboard-sdist-dist/*.whl
+        uv venv "$RUNNER_TEMP/dashboard-sdist-venv"
+        uv pip install --python "$RUNNER_TEMP/dashboard-sdist-venv/bin/python" "$RUNNER_TEMP"/dashboard-sdist-dist/*.whl
+        cd "$RUNNER_TEMP"
+        "$RUNNER_TEMP/dashboard-sdist-venv/bin/python" -I "$GITHUB_WORKSPACE/scripts/check_dashboard_package.py" --installed --source-root "$GITHUB_WORKSPACE"
