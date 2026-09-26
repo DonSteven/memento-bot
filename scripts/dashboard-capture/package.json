@@ -1,0 +1,8 @@
+{
+  "name": "nanobot-dashboard-demo-capture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

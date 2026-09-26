@@ -200,3 +200,51 @@ The directory must be new and under the system temporary directory. Open
 Ctrl-C and remove the temporary directory. The fixture uses synthetic
 observations and inert Memory, Knowledge and Cron dependencies, not the full
 live gateway. Its token and duration values are illustrative.
+
+## Regenerate the Dashboard demo
+
+The [capture plan](../spec/DASHBOARD_DEMO_EXECUTION_PLAN.md) defines the
+storyboard. The capture script serves the real built React UI against a new
+temporary observation store, replays a synthetic run through the store and
+same-process WebSocket events, and writes three local assets. It does not read
+the user config or workspace, run a model or search, or need an account.
+Presentation pauses do not measure service latency.
+
+From the repository root, build the UI as described above and prepare separate
+development tools:
+
+```bash
+cd scripts/dashboard-capture
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
+npx playwright install chromium
+cd ../..
+ffmpeg -version
+ffmpeg -hide_banner -filters | grep -E 'palettegen|paletteuse'
+```
+
+Use Node 20.19+ and an FFmpeg build that lists both GIF palette filters.
+Playwright and FFmpeg are capture tools; they are not production Python
+dependencies. If a full FFmpeg is unavailable on the machine, one local option
+is `uv pip install --target /tmp/nanobot-demo-encoder imageio-ffmpeg==0.6.0`;
+obtain its executable path with
+`PYTHONPATH=/tmp/nanobot-demo-encoder .venv/bin/python -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())'`
+and pass that path with `--ffmpeg`. Check that binary with `-version` and
+`-filters` as above. No machine-specific executable path is stored in the
+repository.
+
+The single regeneration command is:
+
+```bash
+node scripts/capture_dashboard_demo.mjs
+```
+
+It writes `docs/assets/dashboard/overview.png`, `runs.png`, and `demo.gif`.
+Use `--output-dir DIR` to generate into another directory. If Playwright's
+installed browser revision differs from the local browser cache, pass
+`--browser /path/to/chrome`; `--ffmpeg /path/to/ffmpeg` and
+`--python /path/to/python` override the other executables. The equivalent
+`DASHBOARD_DEMO_CHROMIUM` and `DASHBOARD_DEMO_FFMPEG` environment variables
+are also supported. The script checks DOM state, WebSocket messages, REST
+contents, failed requests, nonlocal browser requests and GIF frame count. It
+removes temporary stores and frames after success; on failure it reports the
+temporary diagnostics directory.

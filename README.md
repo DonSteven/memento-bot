@@ -1,12 +1,34 @@
 # Memento Bot
 
-Memento Bot is an independently maintained extension of [HKUDS/nanobot](https://github.com/HKUDS/nanobot), focused on persistent memory, evidence-aware knowledge retrieval, and context-efficient agent workflows. It gives a personal AI assistant structured recall across conversations and reusable web evidence with explicit coverage and failure states.
+Memento Bot extends [HKUDS/nanobot](https://github.com/HKUDS/nanobot) with persistent memory, evidence-aware knowledge retrieval, and an observability Dashboard for a personal AI assistant.
 
-**Upstream:** HKUDS/nanobot · **Baseline:** [`2dac322b2e04e5791a62da01d216cb9224ee8996`](https://github.com/DonSteven/memento-bot/commit/2dac322b2e04e5791a62da01d216cb9224ee8996) (`upstream-base`)
+- **Memory:** transactional facts with manual-edit recovery and budgeted English/Chinese semantic recall.
+- **Knowledge:** source-linked evidence, explicit coverage assessment, and bounded online supplementation.
+- **Observability:** per-run Memory, Model and Tools traces with live Dashboard updates.
+
+[Demo](#demo) · [What I Changed](#what-i-changed) · [Quick Start](#quick-start) · [Architecture](#architecture) · [Evaluation](#evaluation--reliability) · [Configuration](docs/CONFIGURATION.md)
+
+## Demo
+
+The real React Dashboard plays back [synthetic observations](scripts/dashboard_demo.py) through its local store, REST API and WebSocket. No LLM or web search runs during this capture; usage and durations are illustrative.
+
+![Synthetic demo data: a new run appears, receives Memory, Model and Tools events, then completes](docs/assets/dashboard/demo.gif)
+
+*Synthetic demo data — live run playback. Presentation pauses are not service latency.*
+
+![Synthetic demo data: Overview page with run totals, hourly charts and recent runs](docs/assets/dashboard/overview.png)
+
+*Synthetic demo data — Overview. Counts and timings are illustrative. [View full size](docs/assets/dashboard/overview.png).*
+
+![Synthetic demo data: completed run detail with Memory, expanded kb_search result, final Model answer and token usage](docs/assets/dashboard/runs.png)
+
+*Synthetic demo data — focused Runs detail with tool result and final answer. [View full size](docs/assets/dashboard/runs.png).*
+
+See [Dashboard runtime](docs/DASHBOARD_RUNTIME.md#regenerate-the-dashboard-demo) for the capture command and local tool setup.
 
 ## What I Changed
 
-Development after the baseline concentrates on memory, retrieval and runtime integration:
+Development after the [upstream baseline](#upstream--attribution) concentrates on memory, retrieval and runtime integration:
 
 | Problem | Implemented / redesigned in Memento Bot |
 | --- | --- |
@@ -16,10 +38,6 @@ Development after the baseline concentrates on memory, retrieval and runtime int
 | Local evidence can be incomplete. | Added one bounded search-and-ingestion round, followed by retrieval and reassessment against the same persistent knowledge store. |
 | Growing memory and tool results can exceed model limits. | Added model-call boundary checks, whole-record/evidence reduction, explicit context-limit results and offline workspace conversion. |
 | Local runs and service behavior need inspection. | Added a gateway Dashboard with per-run Memory/Model/Tools traces, same-process live updates, and direct Memory, Knowledge and Cron diagnostics. |
-
-**Inherited from nanobot:** the agent loop and runner foundation, provider integrations, tools and MCP, chat channels, sessions, scheduling, CLI, Python SDK and HTTP API. Memento Bot extends these entry points; it does not claim their original implementation.
-
-[Quick Start](#quick-start) · [Architecture](#architecture) · [Evaluation](#evaluation--reliability) · [Configuration](docs/CONFIGURATION.md)
 
 ## Why Memento Bot
 
@@ -72,9 +90,7 @@ a [workspace-scoped SQLite run store](nanobot/observability/store.py),
 [React UI](dashboard/src/pages/). Runs exposes Memory, Model and Tools events,
 with token usage and sanitized previews. Overview summarizes recent runs;
 Memory, Knowledge and Tasks reuse the gateway's existing services. The Agent
-loop, Memory/Knowledge services and Cron foundation are identified above as
-inherited or extended components; the Dashboard does not claim to originate
-their underlying behavior.
+loop and existing services provide the underlying runtime.
 
 ```mermaid
 flowchart LR
@@ -168,22 +184,9 @@ another process. The listener has no login and binds to localhost by default.
 See [Dashboard runtime](docs/DASHBOARD_RUNTIME.md) for configuration, data
 semantics, build steps, and side effects of manual searches.
 
-The following captures use the real React UI with [synthetic fixture data](scripts/dashboard_demo.py).
-They illustrate navigation and traces; displayed timing and token values are
-examples, not performance measurements. To reproduce without API keys, build
-the UI, then run `.venv/bin/python scripts/dashboard_demo.py --data-dir /tmp/nanobot-ui-demo`
-with a new directory. Open `http://127.0.0.1:18791/dashboard/`, inspect
-Overview and `#/runs/demo-complete-03`, stop with Ctrl-C, then remove the
-temporary directory. The fixture serves inert Memory, Knowledge and Cron
-dependencies; it is not the full live gateway.
-
-![Overview page with three illustrative Agent runs and hourly charts](docs/assets/dashboard/overview.png)
-
-*Synthetic demo data — Overview. Timing and counts are illustrative.*
-
-![Expanded run trace with Memory, Model, Tools and sanitized previews](docs/assets/dashboard/runs.png)
-
-*Synthetic demo data — expanded Runs trace. Tokens and durations are illustrative.*
+See the [Demo](#demo) for the synthetic UI playback. The static demo server can
+also be run with `.venv/bin/python scripts/dashboard_demo.py --data-dir /tmp/nanobot-ui-demo`
+using a new temporary directory.
 
 ## Project Structure
 
@@ -203,7 +206,9 @@ dependencies; it is not the full live gateway.
 
 Memento Bot is an independently maintained derivative of [HKUDS/nanobot](https://github.com/HKUDS/nanobot), with substantial modifications and extensions. It is not affiliated with HKUDS.
 
-Development in this repository diverged from upstream at `2dac322b2e04e5791a62da01d216cb9224ee8996`. The annotated Git tag `upstream-base` identifies that baseline. The original nanobot code is distributed under the MIT License; original copyright and permission notices are preserved. Subsequent Memento Bot extensions are maintained in this repository.
+Development in this repository diverged from upstream at [`2dac322b2e04e5791a62da01d216cb9224ee8996`](https://github.com/DonSteven/memento-bot/commit/2dac322b2e04e5791a62da01d216cb9224ee8996). The annotated Git tag `upstream-base` identifies that baseline. The original nanobot code is distributed under the MIT License; original copyright and permission notices are preserved. Subsequent Memento Bot extensions are maintained in this repository.
+
+The agent loop and runner foundation, provider integrations, tools and MCP, chat channels, sessions, scheduling, CLI, Python SDK and HTTP API are inherited from nanobot. Memento Bot extends these entry points.
 
 [Contribution guide](CONTRIBUTING.md) · [Security policy](SECURITY.md)
 
